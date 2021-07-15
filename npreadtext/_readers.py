@@ -1,7 +1,8 @@
 
 import os
 import codecs
-import types
+from collections.abc import Iterable
+import io
 from pathlib import Path
 import operator
 import numpy as np
@@ -248,12 +249,17 @@ def read(file, *, delimiter=',', comment='#', quote='"',
                                              converters=converters,
                                              dtype=dtype, dtypes=dtypes,
                                              encoding=enc)
-    elif isinstance(file, types.GeneratorType):
+    # TODO: np.loadtxt states in an exception that it's only intended to work
+    # on generators, but in fact works on any iterable of strings/bytes-like
+    # objects.
+    # This logic correctly matches np.loadtxt behavior (on Linux at least)
+    # but feels fragile.
+    elif isinstance(file, Iterable) and not isinstance(file, io.IOBase):
         if dtype is None:
             raise ValueError('dtype must be given when reading from '
                              'a generator')
         # Wrap the generator in a class with a readline() method.
-        fg = preprocess(FileGen(file))
+        fg = preprocess(FileGen(iter(file)))
         enc = encoding.encode('ascii') if encoding is not None else None
         arr = _readtext_from_file_object(fg, delimiter=delimiter,
                                          comment=comment, quote=quote,
