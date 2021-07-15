@@ -200,7 +200,7 @@ def read(file, *, delimiter=',', comment='#', quote='"',
                                           codes=codes, sizes=sizes,
                                           encoding=encoding)
         else:
-            f = np.lib._datasource.open(fname, 'rt', encoding=encoding)
+            f = np.lib._datasource.open(file, 'rt', encoding=encoding)
             try:
                 enc = encoding.encode('ascii') if encoding is not None else None
                 arr = _readtext_from_file_object(f, delimiter=delimiter,
