@@ -187,34 +187,21 @@ def read(file, *, delimiter=',', comment='#', quote='"',
     # XXX Not everything is handled correctly at the moment.
     #     A Path could contain a .gz file, for example...
     if isinstance(file, str):
-        fname, ext = os.path.splitext(file)
-        if ext not in ['.bz2', '.gz', '.xz', '.lzma'] and encoding is None:
-            arr = _readtext_from_filename(file, delimiter=delimiter,
-                                          comment=comment, quote=quote,
-                                          decimal=decimal, sci=sci,
-                                          imaginary_unit=imaginary_unit,
-                                          usecols=usecols, skiprows=skiprows,
-                                          max_rows=max_rows,
-                                          converters=converters,
-                                          dtype=dtype,
-                                          codes=codes, sizes=sizes,
-                                          encoding=encoding)
-        else:
-            f = np.lib._datasource.open(file, 'rt', encoding=encoding)
-            try:
-                enc = encoding.encode('ascii') if encoding is not None else None
-                arr = _readtext_from_file_object(f, delimiter=delimiter,
-                                                 comment=comment, quote=quote,
-                                                 decimal=decimal, sci=sci,
-                                                 imaginary_unit=imaginary_unit,
-                                                 usecols=usecols,
-                                                 skiprows=skiprows,
-                                                 max_rows=max_rows,
-                                                 converters=converters,
-                                                 dtype=dtype, codes=codes,
-                                                 sizes=sizes, encoding=enc)
-            finally:
-                f.close()
+        f = np.lib._datasource.open(file, 'rt', encoding=encoding)
+        try:
+            enc = encoding.encode('ascii') if encoding is not None else None
+            arr = _readtext_from_file_object(f, delimiter=delimiter,
+                                             comment=comment, quote=quote,
+                                             decimal=decimal, sci=sci,
+                                             imaginary_unit=imaginary_unit,
+                                             usecols=usecols,
+                                             skiprows=skiprows,
+                                             max_rows=max_rows,
+                                             converters=converters,
+                                             dtype=dtype, codes=codes,
+                                             sizes=sizes, encoding=enc)
+        finally:
+            f.close()
     elif isinstance(file, Path):
         with open(file, encoding=encoding) as f:
             enc = encoding.encode('ascii') if encoding is not None else None
