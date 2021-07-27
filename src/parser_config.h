@@ -75,7 +75,11 @@ typedef struct _parser_config {
       *  integer type.
       */
      bool allow_float_for_int;
-
+     /*
+      * Data should be encoded as `latin1` when using python converter
+      * (implementing `loadtxt` default Python 2 compatibility mode).
+      */
+     bool python_byte_converters;
 } parser_config;
 
 parser_config
