@@ -8,7 +8,8 @@
 
 
 #define DECLARE_TO_INT(intw, INT_MIN, INT_MAX)                                  \
-    intw##_t to_##intw(char32_t *field, parser_config *pconfig, int *error)     \
+    intw##_t                                                                        \
+    to_##intw(char32_t *field, parser_config *pconfig, int *error)                  \
     {                                                                               \
         intw##_t x;                                                                 \
         int ierror = 0;                                                             \
@@ -36,7 +37,8 @@
     }                                                                               \
 
 #define DECLARE_TO_UINT(uintw, UINT_MAX)                                            \
-    uintw##_t to_##uintw(char32_t *field, parser_config *pconfig, int *error)       \
+    uintw##_t                                                                       \
+    to_##uintw(char32_t *field, parser_config *pconfig, int *error)                 \
     {                                                                               \
         uintw##_t x;                                                                \
         int ierror = 0;                                                             \

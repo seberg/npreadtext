@@ -27,7 +27,8 @@ typedef struct {
 } integer_range;
 
 
-int enlarge_ranges(int new_num_fields, int num_fields, integer_range **ranges)
+int
+enlarge_ranges(int new_num_fields, int num_fields, integer_range **ranges)
 {
     int nbytes;
     integer_range *new_ranges;
@@ -47,8 +48,10 @@ int enlarge_ranges(int new_num_fields, int num_fields, integer_range **ranges)
     return 0;
 }
 
-int enlarge_type_tracking_arrays(int new_num_fields, int num_fields,
-                                 field_type **types, integer_range **ranges)
+int
+enlarge_type_tracking_arrays(
+        int new_num_fields, int num_fields,
+        field_type **types, integer_range **ranges)
 {
     int status1 = field_types_grow(new_num_fields, num_fields, types);
     int status2 = enlarge_ranges(new_num_fields, num_fields, ranges);
@@ -76,8 +79,9 @@ int enlarge_type_tracking_arrays(int new_num_fields, int num_fields,
  *  ...
  */
 
-int analyze(stream *s, parser_config *pconfig, int skiplines, int numrows,
-            int *p_num_fields, field_type **p_field_types)
+int
+analyze(stream *s, parser_config *pconfig, int skiplines, int numrows,
+        int *p_num_fields, field_type **p_field_types)
 {
     int row_count = 0;
     int num_fields = 0;

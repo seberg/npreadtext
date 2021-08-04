@@ -77,11 +77,10 @@
  *  * The row has more fields than MAX_NUM_COLUMNS.
  */
 
-static char32_t **tokenize_sep(stream *s, char32_t *word_buffer,
-                               int word_buffer_size,
-                               parser_config *pconfig,
-                               int *p_num_fields,
-                               int *p_error_type)
+static char32_t **
+tokenize_sep(stream *s,
+        char32_t *word_buffer, int word_buffer_size,
+        parser_config *pconfig, int *p_num_fields, int *p_error_type)
 {
     int n;
     char32_t c;
@@ -243,10 +242,10 @@ static char32_t **tokenize_sep(stream *s, char32_t *word_buffer,
  *      This needs to be refined.
  */
 
-static char32_t **tokenize_ws(stream *s, char32_t *word_buffer, int word_buffer_size,
-                              parser_config *pconfig,
-                              int *p_num_fields,
-                              int *p_error_type)
+static char32_t **
+tokenize_ws(stream *s,
+        char32_t *word_buffer, int word_buffer_size,
+        parser_config *pconfig, int *p_num_fields, int *p_error_type)
 {
     int n;
     char32_t c;
@@ -407,8 +406,10 @@ static char32_t **tokenize_ws(stream *s, char32_t *word_buffer, int word_buffer_
 }
 
 
-char32_t **tokenize(stream *s, char32_t *word_buffer, int word_buffer_size,
-                    parser_config *pconfig, int *p_num_fields, int *p_error_type)
+char32_t **
+tokenize(stream *s,
+        char32_t *word_buffer, int word_buffer_size,
+        parser_config *pconfig, int *p_num_fields, int *p_error_type)
 {
     char32_t **result;
 

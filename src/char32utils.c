@@ -2,7 +2,8 @@
 #include "char32utils.h"
 
 
-size_t strlen32(char32_t *s)
+size_t
+strlen32(char32_t *s)
 {
     size_t count = 0;
     while (*s) {
@@ -13,7 +14,8 @@ size_t strlen32(char32_t *s)
 }
 
 
-long long strtoll32(char32_t *s, char32_t **p)
+long long
+strtoll32(char32_t *s, char32_t **p)
 {
     long long result = 0;
     int sign = 1;

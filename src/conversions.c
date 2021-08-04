@@ -11,8 +11,9 @@
 #include "char32utils.h"
 
 double
-_Py_dg_strtod_modified(const char32_t *s00, char32_t **se, int *error,
-                       char32_t decimal, char32_t sci, bool skip_trailing);
+_Py_dg_strtod_modified(
+        const char32_t *s00, char32_t **se, int *error,
+        char32_t decimal, char32_t sci, bool skip_trailing);
 
 /*
  *  `item` must be the nul-terminated string that is to be
@@ -30,7 +31,8 @@ _Py_dg_strtod_modified(const char32_t *s00, char32_t **se, int *error,
  *
  */
 
-bool to_double(char32_t *item, double *p_value, char32_t sci, char32_t decimal)
+bool
+to_double(char32_t *item, double *p_value, char32_t sci, char32_t decimal)
 {
     char32_t *p_end;
     int error;
@@ -41,9 +43,11 @@ bool to_double(char32_t *item, double *p_value, char32_t sci, char32_t decimal)
 }
 
 
-bool to_complex(char32_t *item, double *p_real, double *p_imag,
-                char32_t sci, char32_t decimal, char32_t imaginary_unit,
-                bool allow_parens)
+bool
+to_complex(
+        char32_t *item, double *p_real, double *p_imag,
+        char32_t sci, char32_t decimal, char32_t imaginary_unit,
+        bool allow_parens)
 {
     char32_t *p_end;
     int error;
@@ -96,7 +100,8 @@ bool to_complex(char32_t *item, double *p_real, double *p_imag,
 }
 
 
-bool to_longlong(char32_t *item, long long *p_value)
+bool
+to_longlong(char32_t *item, long long *p_value)
 {
     char32_t *p_end;
 

@@ -2,7 +2,8 @@
 #include <stdbool.h>
 #include "parser_config.h"
 
-parser_config default_parser_config(void)
+parser_config
+default_parser_config(void)
 {
     parser_config config;
 

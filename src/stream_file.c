@@ -222,7 +222,8 @@ uint32_t fb_skipline(void *fb)
  *  The return value is 0 if no errors occurred.
  */
 
-uint32_t fb_skiplines(void *fb, int num_lines)
+uint32_t
+fb_skiplines(void *fb, int num_lines)
 {
     int32_t status;
     char32_t c;
@@ -245,12 +246,14 @@ uint32_t fb_skiplines(void *fb, int num_lines)
     return 0;
 }
 
-long int fb_tell(void *fb)
+long int
+fb_tell(void *fb)
 {
     return ftell(FB(fb)->file);
 }
 
-int fb_seek(void *fb, long int pos)
+int
+fb_seek(void *fb, long int pos)
 {
     // Not correct, but for now, assume pos == 0.
     FB(fb)->line_number = 1;
@@ -261,8 +264,8 @@ int fb_seek(void *fb, long int pos)
     return fseek(FB(fb)->file, pos, SEEK_SET);
 }
 
-static
-int stream_del(stream *strm, int restore)
+static int
+stream_del(stream *strm, int restore)
 {
     file_buffer *fb = (file_buffer *) (strm->stream_data);
 
@@ -288,7 +291,8 @@ int stream_del(stream *strm, int restore)
  *  Returns NULL if the memory allocation fails.
  */
 
-stream *stream_file(FILE *f, int buffer_size)
+stream *
+stream_file(FILE *f, int buffer_size)
 {
     file_buffer *fb;
     stream *strm;
@@ -345,7 +349,8 @@ stream *stream_file(FILE *f, int buffer_size)
 }
 
 
-stream *stream_file_from_filename(char *filename, int buffer_size)
+stream *
+stream_file_from_filename(char *filename, int buffer_size)
 {
     FILE *fp;
 
