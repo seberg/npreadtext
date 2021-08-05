@@ -348,16 +348,3 @@ stream_file(FILE *f, int buffer_size)
     return strm;
 }
 
-
-stream *
-stream_file_from_filename(char *filename, int buffer_size)
-{
-    FILE *fp;
-
-    fp = fopen(filename, "rb");
-    if (fp == NULL) {
-        return NULL;
-    }
-
-    return stream_file(fp, buffer_size);    
-}
