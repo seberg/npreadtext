@@ -58,9 +58,6 @@ typedef struct _python_file_by_line {
     /* The DATA associated with line. */
     void *unicode_data;
 
-    /* An empty Python tuple. This is the argument passed to readline. */
-    PyObject *empty_tuple;
-
     /* Position in the buffer of the next character to read. */
     Py_ssize_t current_buffer_pos;
 
@@ -98,14 +95,13 @@ _fb_load(void *fb)
     if (!FB(fb)->reached_eof && (FB(fb)->current_buffer_pos == FB(fb)->linelen)) {
         // Read a line from the file.
         //printf("_fb_load: calling readline\n");
-        PyObject *line = PyObject_Call(FB(fb)->readline, FB(fb)->empty_tuple, NULL);
+        PyObject *line = PyObject_CallFunctionObjArgs(FB(fb)->readline, NULL);
         //printf("_fb_load: back from readline\n");
-        FB(fb)->line = line;
+        Py_XSETREF(FB(fb)->line, line);
         if (line == NULL) {
             //printf("_fb_load: STREAM_ERROR\n");
             return STREAM_ERROR;
         }
-        Py_INCREF(line);
         if (PyBytes_Check(line)) {
             PyObject *uline;
             char *enc;
@@ -119,20 +115,17 @@ _fb_load(void *fb)
             }
             uline = PyUnicode_FromEncodedObject(line, enc, NULL);
             if (uline == NULL) {
-                Py_DECREF(line);
                 // XXX temporary printf
                 printf("_fb_load: failed to decode bytes object\n");
                 return STREAM_ERROR;
             }
-            Py_INCREF(uline);
-            Py_DECREF(line);
-            line = uline;
+            Py_SETREF(FB(fb)->line, uline);
         }
 
         // Cache data about the line in the fb object.
-        FB(fb)->unicode_kind = PyUnicode_KIND(line);
-        FB(fb)->unicode_data = PyUnicode_DATA(line);
-        FB(fb)->linelen = PyUnicode_GET_LENGTH(line);
+        FB(fb)->unicode_kind = PyUnicode_KIND(FB(fb)->line);
+        FB(fb)->unicode_data = PyUnicode_DATA(FB(fb)->line);
+        FB(fb)->linelen = PyUnicode_GET_LENGTH(FB(fb)->line);
 
         // Reset the character position to 0.
         FB(fb)->current_buffer_pos = 0;
@@ -279,7 +272,7 @@ static long int
 fb_tell(void *fb)
 {
     long int pos;
-    PyObject *obj = PyObject_Call(FB(fb)->tell, FB(fb)->empty_tuple, NULL);
+    PyObject *obj = PyObject_CallFunctionObjArgs(FB(fb)->tell, NULL);
     // XXX Check for error.
     pos = PyLong_AsLong(obj);
     return pos;
@@ -324,7 +317,7 @@ stream_del(stream *strm, int restore)
     Py_XDECREF(fb->readline);
     Py_XDECREF(fb->seek);
     Py_XDECREF(fb->tell);
-    Py_XDECREF(fb->empty_tuple);
+    Py_XDECREF(fb->line);
 
     free(fb);
     free(strm);
@@ -352,7 +345,7 @@ stream_python_file_by_line(PyObject *obj, PyObject *encoding)
     fb->readline = NULL;
     fb->seek = NULL;
     fb->tell = NULL;
-    fb->empty_tuple = NULL;
+    fb->line = NULL;
     fb->encoding = encoding;
 
     strm = (stream *) malloc(sizeof(stream));
@@ -387,11 +380,6 @@ stream_python_file_by_line(PyObject *obj, PyObject *encoding)
     fb->tell = func;
     Py_INCREF(fb->tell);
 
-    fb->empty_tuple = PyTuple_New(0);
-    if (fb->empty_tuple == NULL) {
-        goto fail;
-    }
-
     fb->line_number = 1;
     fb->linelen = 0;
 
@@ -416,7 +404,6 @@ fail:
     Py_XDECREF(fb->readline);
     Py_XDECREF(fb->seek);
     Py_XDECREF(fb->tell);
-    Py_XDECREF(fb->empty_tuple);
 
     free(fb);
     free(strm);
