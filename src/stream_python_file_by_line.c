@@ -72,8 +72,8 @@ typedef struct _python_file_by_line {
 
 #define FB(fb)  ((python_file_by_line *)fb)
 
-static
-int32_t fb_line_number(void *fb)
+static int32_t
+fb_line_number(void *fb)
 {
     return FB(fb)->line_number;
 }
@@ -87,8 +87,8 @@ int32_t fb_line_number(void *fb)
  *  Returns STREAM_ERROR on error.
  */
 
-static
-uint32_t _fb_load(void *fb)
+static uint32_t
+_fb_load(void *fb)
 {
     //printf("_fb_load: starting\n");
     //printf("FB(fb)->reached_eof = %d\n", FB(fb)->reached_eof);
@@ -160,8 +160,8 @@ uint32_t _fb_load(void *fb)
  *  When '\n' is returned, fb->line_number is incremented.
  */
 
-static
-char32_t fb_fetch(void *fb)
+static char32_t
+fb_fetch(void *fb)
 {
     char32_t c;
   
@@ -192,8 +192,8 @@ char32_t fb_fetch(void *fb)
  *  If the next two characters in the buffer are "\r\n", '\n' is returned.
  */
 
-static
-char32_t fb_next(void *fb)
+static char32_t
+fb_next(void *fb)
 {
     char32_t c;
 
@@ -218,8 +218,8 @@ char32_t fb_next(void *fb)
  *  The return value is 0 if no errors occurred.
  */
 
-static
-uint32_t fb_skipline(void *fb)
+static uint32_t
+fb_skipline(void *fb)
 {
     char32_t c;
 
@@ -250,8 +250,8 @@ uint32_t fb_skipline(void *fb)
  *  The return value is 0 if no errors occurred.
  */
 
-static
-uint32_t fb_skiplines(void *fb, int num_lines)
+static uint32_t
+fb_skiplines(void *fb, int num_lines)
 {
     int32_t status;
     char32_t c;
@@ -274,9 +274,9 @@ uint32_t fb_skiplines(void *fb, int num_lines)
     return 0;
 }
 
-// XXX Is long int really the correct type?
-static
-long int fb_tell(void *fb)
+// XXX Is long int really the correct type? Probably no, should be `npy_off_t`
+static long int
+fb_tell(void *fb)
 {
     long int pos;
     PyObject *obj = PyObject_Call(FB(fb)->tell, FB(fb)->empty_tuple, NULL);
@@ -285,8 +285,8 @@ long int fb_tell(void *fb)
     return pos;
 }
 
-static
-int fb_seek(void *fb, long int pos)
+static int
+fb_seek(void *fb, long int pos)
 {
     int status = 0;
 
@@ -303,8 +303,8 @@ int fb_seek(void *fb, long int pos)
     return status;
 }
 
-static
-int stream_del(stream *strm, int restore)
+static int
+stream_del(stream *strm, int restore)
 {
     python_file_by_line *fb = (python_file_by_line *) (strm->stream_data);
 
@@ -333,7 +333,8 @@ int stream_del(stream *strm, int restore)
 }
 
 
-stream *stream_python_file_by_line(PyObject *obj, PyObject *encoding)
+stream *
+stream_python_file_by_line(PyObject *obj, PyObject *encoding)
 {
     python_file_by_line *fb;
     stream *strm;

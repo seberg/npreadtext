@@ -54,9 +54,10 @@ as missing data.
  *      to classify a column, not just a single field. 
  */
 
-char classify_type(char32_t *field, char32_t decimal, char32_t sci, char32_t imaginary_unit,
-                   int64_t *i, uint64_t *u,
-                   char prev_type)
+char
+classify_type(char32_t *field,
+        char32_t decimal, char32_t sci, char32_t imaginary_unit,
+        int64_t *i, uint64_t *u, char prev_type)
 {
     int error = 0;
     int success;
@@ -130,7 +131,8 @@ char classify_type(char32_t *field, char32_t decimal, char32_t sci, char32_t ima
  *
  */
 
-char type_for_integer_range(int64_t imin, uint64_t umax)
+char
+type_for_integer_range(int64_t imin, uint64_t umax)
 {
     char type;
 

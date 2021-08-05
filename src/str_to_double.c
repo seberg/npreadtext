@@ -21,8 +21,10 @@ extern double pow10table_size;
 extern double pow10table[];
 
 
-double str_to_double(const char32_t *str, char32_t **end, int *error,
-                     char32_t decimal, char32_t sci, bool skip_trailing)
+double
+str_to_double(
+        const char32_t *str, char32_t **end, int *error,
+        char32_t decimal, char32_t sci, bool skip_trailing)
 {
     double value;
     int negative, negative_exp;

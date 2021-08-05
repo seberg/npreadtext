@@ -11,9 +11,8 @@
 #include "field_types.h"
 
 
-field_type *field_types_create(int num_field_types,
-                               const char *codes,
-                               const int32_t *sizes)
+field_type *
+field_types_create(int num_field_types, const char *codes, const int32_t *sizes)
 {
     field_type *ft;
 
@@ -28,7 +27,8 @@ field_type *field_types_create(int num_field_types,
     return ft;
 }
 
-void field_types_fprintf(FILE *out, int num_field_types, const field_type *ft)
+void
+field_types_fprintf(FILE *out, int num_field_types, const field_type *ft)
 {
     for (int i = 0; i < num_field_types; ++i) {
         fprintf(out, "ft[%d].typecode = %c, .itemsize = %d\n",
@@ -37,7 +37,8 @@ void field_types_fprintf(FILE *out, int num_field_types, const field_type *ft)
 }
 
 
-bool field_types_is_homogeneous(int num_field_types, const field_type *ft)
+bool
+field_types_is_homogeneous(int num_field_types, const field_type *ft)
 {
     bool homogeneous = true;
     for (int k = 1; k < num_field_types; ++k) {
@@ -51,7 +52,8 @@ bool field_types_is_homogeneous(int num_field_types, const field_type *ft)
 }
 
 
-int32_t field_types_total_size(int num_field_types, const field_type *ft)
+int32_t
+field_types_total_size(int num_field_types, const field_type *ft)
 {
     int32_t size = 0;
     for (int k = 0; k < num_field_types; ++k) {
@@ -66,7 +68,8 @@ int32_t field_types_total_size(int num_field_types, const field_type *ft)
 // previously malloc'ed.
 // The function assumes that new_num_field_types > num_field_types.
 //
-int field_types_grow(int new_num_field_types, int num_field_types, field_type **ft)
+int
+field_types_grow(int new_num_field_types, int num_field_types, field_type **ft)
 {
     size_t nbytes;
     field_type *new_ft;
@@ -119,8 +122,10 @@ char *typecode_to_str(char typecode)
 // If cols == NULL, it is not used.  Otherwise it is an array
 // of length num_cols that gives the index into ft to use.
 //
-char *field_types_build_str(int num_cols, const int32_t *cols, bool homogeneous,
-                            const field_type *ft)
+char *
+field_types_build_str(
+        int num_cols, const int32_t *cols, bool homogeneous,
+        const field_type *ft)
 {
     char *dtypestr;
     size_t len;
@@ -178,7 +183,8 @@ char *field_types_build_str(int num_cols, const int32_t *cols, bool homogeneous,
 
 #ifdef TESTMAIN
 
-void show_field_types(int num_fields, field_type *ft)
+void
+show_field_types(int num_fields, field_type *ft)
 {
     field_types_fprintf(stdout, num_fields, ft);
 
@@ -195,7 +201,8 @@ void show_field_types(int num_fields, field_type *ft)
 }
 
 
-int main(int argc, char *argv[])
+int
+main(int argc, char *argv[])
 {
     char *codes = "ffHHSU";
     int32_t sizes[] = {8, 8, 2, 2, 4, 48};

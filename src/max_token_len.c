@@ -3,7 +3,8 @@
 #include "typedefs.h"
 
 
-size_t max_token_len(size_t num_fields, char32_t **tokens)
+size_t
+max_token_len(size_t num_fields, char32_t **tokens)
 {
     size_t max_len = 0;
     size_t last_len;

@@ -31,8 +31,9 @@
 //
 // If num_field_types is not 1, actual_num_fields must equal num_field_types.
 //
-size_t compute_row_size(int actual_num_fields,
-                        int num_field_types, field_type *field_types)
+size_t
+compute_row_size(
+        int actual_num_fields, int num_field_types, field_type *field_types)
 {
     size_t row_size;
 
@@ -51,7 +52,8 @@ size_t compute_row_size(int actual_num_fields,
 }
 
 
-PyObject *call_converter_function(PyObject *func, char32_t *token)
+PyObject *
+call_converter_function(PyObject *func, char32_t *token)
 {
     Py_ssize_t tokenlen = 0;
     while (token[tokenlen]) {
@@ -74,8 +76,9 @@ PyObject *call_converter_function(PyObject *func, char32_t *token)
  *  Find the length of the longest token.
  */
 
-size_t max_token_len(char32_t **tokens, int num_tokens,
-                     int32_t *usecols, int num_usecols)
+size_t
+max_token_len(
+        char32_t **tokens, int num_tokens, int32_t *usecols, int num_usecols)
 {
     size_t maxlen = 0;
     for (size_t i = 0; i < num_tokens; ++i) {
@@ -96,9 +99,10 @@ size_t max_token_len(char32_t **tokens, int num_tokens,
 
 
 // WIP...
-size_t max_token_len_with_converters(char32_t **tokens, int num_tokens,
-                                     int32_t *usecols, int num_usecols,
-                                     PyObject **conv_funcs)
+size_t
+max_token_len_with_converters(
+        char32_t **tokens, int num_tokens, int32_t *usecols,
+        int num_usecols, PyObject **conv_funcs)
 {
     size_t maxlen = 0;
     size_t m;
@@ -146,8 +150,10 @@ size_t max_token_len_with_converters(char32_t **tokens, int num_tokens,
 /*
  *  Create the array of converter functions from the Python converters dict.
  */
-PyObject **create_conv_funcs(PyObject *converters, int32_t *usecols, int num_usecols,
-                             int current_num_fields, read_error_type *read_error)
+PyObject **
+create_conv_funcs(
+        PyObject *converters, int32_t *usecols, int num_usecols,
+        int current_num_fields, read_error_type *read_error)
 {
     PyObject **conv_funcs = NULL;
     size_t j, k;
@@ -221,15 +227,12 @@ PyObject **create_conv_funcs(PyObject *converters, int32_t *usecols, int num_use
  *      Information about errors detected in read_rows()
  */
 
-void *read_rows(stream *s, int *nrows,
-                int num_field_types, field_type *field_types,
-                parser_config *pconfig,
-                int32_t *usecols, int num_usecols,
-                int skiplines,
-                PyObject *converters,
-                void *data_array,
-                int *num_cols,
-                read_error_type *read_error)
+void *
+read_rows(stream *s,
+        int *nrows, int num_field_types, field_type *field_types,
+        parser_config *pconfig, int32_t *usecols, int num_usecols,
+        int skiplines, PyObject *converters, void *data_array,
+        int *num_cols, read_error_type *read_error)
 {
     char *data_ptr;
     int current_num_fields;

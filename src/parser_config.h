@@ -102,6 +102,7 @@ typedef struct _parser_config {
 
 } parser_config;
 
-parser_config default_parser_config(void);
+parser_config
+default_parser_config(void);
 
 #endif
