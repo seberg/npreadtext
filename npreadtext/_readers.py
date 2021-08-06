@@ -253,7 +253,8 @@ def read(file, *, delimiter=',', comment='#', quote='"',
     # on generators, but in fact works on any iterable of strings/bytes-like
     # objects.
     # This logic correctly matches np.loadtxt behavior (on Linux at least)
-    # but feels fragile.
+    # but feels fragile (e.g. IIRC `tempfile` objects on windows don't
+    # derive from IOBase.)
     elif isinstance(file, Iterable) and not isinstance(file, io.IOBase):
         if dtype is None:
             raise ValueError('dtype must be given when reading from '
