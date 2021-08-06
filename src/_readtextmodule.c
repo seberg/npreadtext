@@ -357,8 +357,24 @@ _readtext_from_filename(PyObject *self, PyObject *args, PyObject *kwargs)
         sizes_ptr = PyArray_DATA(sizes);
     }
 
-    stream *s = stream_file_from_filename(filename, buffer_size);
+    /*
+     * TODO: If we keep this logic around, we should probably replace it
+     *       with the logic used in NumPy's `fromfile` function.
+     *       But, we have to figure out how to handle encoding correctly.
+     *       It may make more sense to assume that we can do this "in Python"
+     *       so long, we use the `read` or `read1` method of the file-like
+     *       object in big chunks (rather than by-line streaming, which we
+     *       have to support, though).
+     */
+    FILE *fp = fopen(filename, "rb");
+    if (fp == NULL) {
+        PyErr_Format(PyExc_RuntimeError, "Unable to open '%s'", filename);
+        return NULL;
+    }
+
+    stream *s = stream_file(fp, buffer_size);
     if (s == NULL) {
+        fclose(fp);
         PyErr_Format(PyExc_RuntimeError, "Unable to open '%s'", filename);
         return NULL;
     }
@@ -368,6 +384,7 @@ _readtext_from_filename(PyObject *self, PyObject *args, PyObject *kwargs)
                                 dtype, num_dtype_fields, codes_ptr, sizes_ptr);
 
     stream_close(s, RESTORE_NOT);
+    fclose(fp);
     return arr;
 }
 
