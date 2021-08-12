@@ -15,6 +15,7 @@
 
 typedef struct _stream {
     void *stream_data;
+    char32_t *(*stream_getbuf)(void *sdata, char32_t *end);
     char32_t (*stream_fetch)(void *sdata);
     char32_t (*stream_peek)(void *sdata);
     uint32_t (*stream_skipline)(void *sdata);
@@ -29,6 +30,7 @@ typedef struct _stream {
 } stream;
 
 
+#define stream_getbuf(s, end)       ((s)->stream_getbuf((s)->stream_data), end)
 #define stream_fetch(s)             ((s)->stream_fetch((s)->stream_data))
 #define stream_peek(s)              ((s)->stream_peek((s)->stream_data))
 #define stream_skipline(s)          ((s)->stream_skipline((s)->stream_data))

@@ -12,12 +12,6 @@
 #include "parser_config.h"
 
 
-/* Tokenization state machine states. */
-#define TOKENIZE_INIT       0
-#define TOKENIZE_UNQUOTED   1
-#define TOKENIZE_QUOTED     2
-#define TOKENIZE_WHITESPACE 3
-
 #define ISCOMMENT(c, s, c0, c1) ((c == c0) && ((c1 == 0) || (stream_peek(s) == c1)))
 
 /*
@@ -78,7 +72,7 @@
  */
 
 char32_t **
-tokenize(stream *s,
+tokenize(stream *s, tokenizer_state *ts,
         char32_t *word_buffer, int word_buffer_size,
         parser_config *pconfig, int *p_num_fields, int *p_error_type)
 {
@@ -248,3 +242,4 @@ tokenize(stream *s,
 
     return result;
 }
+
