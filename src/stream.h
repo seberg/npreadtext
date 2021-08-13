@@ -5,24 +5,24 @@
 
 #include "typedefs.h"
 
-#define STREAM_EOF   4294967295  // 2**32-1
-#define STREAM_ERROR 4294967294  // 2**32-2
 
 #define RESTORE_NOT     0
 #define RESTORE_INITIAL 1
 #define RESTORE_FINAL   2
 
+/*
+ * When getting the next line, we hope that the buffer provider can already
+ * give some information about the newlines, because for Python iterables
+ * we definitely expect to get line-by-line buffers.
+ */
+#define BUFFER_MAY_CONTAIN_NEWLINE 0
+#define BUFFER_IS_PARTIAL_LINE 1
+#define BUFFER_IS_LINEND 2
+#define BUFFER_IS_FILEEND 3
 
 typedef struct _stream {
     void *stream_data;
-    char32_t *(*stream_getbuf)(void *sdata, char32_t *end);
-    char32_t (*stream_fetch)(void *sdata);
-    char32_t (*stream_peek)(void *sdata);
-    uint32_t (*stream_skipline)(void *sdata);
-    uint32_t (*stream_skiplines)(void *sdata, int n);
-    int (*stream_linenumber)(void *sdata);
-    int (*stream_lineoffset)(void *sdata);
-    long int (*stream_tell)(void *sdata);
+    int (*stream_nextbuf)(void *sdata, char32_t **start, char32_t **end);
     int (*stream_seek)(void *sdata, long int pos);
     // Note that the first argument to stream_close is the stream pointer
     // itself, not the stream_data pointer.
@@ -30,15 +30,9 @@ typedef struct _stream {
 } stream;
 
 
-#define stream_getbuf(s, end)       ((s)->stream_getbuf((s)->stream_data), end)
-#define stream_fetch(s)             ((s)->stream_fetch((s)->stream_data))
-#define stream_peek(s)              ((s)->stream_peek((s)->stream_data))
-#define stream_skipline(s)          ((s)->stream_skipline((s)->stream_data))
-#define stream_skiplines(s, n)      ((s)->stream_skiplines((s)->stream_data, (n)))
-#define stream_linenumber(s)        ((s)->stream_linenumber((s)->stream_data))
-#define stream_lineoffset(s)        ((s)->stream_lineoffset((s)->stream_data))
+#define stream_nextbuf(s, end)  \
+        ((s)->stream_getbuf((s)->stream_data), start, end)
 #define stream_seek(s, pos)         ((s)->stream_seek((s)->stream_data, (pos)))
-#define stream_tell(s)              ((s)->stream_tell((s)->stream_data))
 #define stream_close(s, restore)    ((s)->stream_close((s), (restore)))
 
 #endif

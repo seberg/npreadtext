@@ -49,6 +49,9 @@ typedef struct _python_file_by_line {
     /* Python str object holding the line most recently read from the file. */
     PyObject *line;
 
+    bool copied;
+    char32_t buf;
+
     /* Length of line */
     Py_ssize_t linelen;
 
@@ -69,11 +72,7 @@ typedef struct _python_file_by_line {
 
 #define FB(fb)  ((python_file_by_line *)fb)
 
-static int32_t
-fb_line_number(void *fb)
-{
-    return FB(fb)->line_number;
-}
+
 
 /*
  *  int _fb_load(void *fb)
@@ -84,199 +83,73 @@ fb_line_number(void *fb)
  *  Returns STREAM_ERROR on error.
  */
 
-static uint32_t
-_fb_load(void *fb)
+static int
+_fb_load(python_file_by_line *fb)
 {
-    //printf("_fb_load: starting\n");
-    //printf("FB(fb)->reached_eof = %d\n", FB(fb)->reached_eof);
-    //printf("FB(fb)->current_buffer_pos = %ld\n", FB(fb)->current_buffer_pos);
-    //printf("FB(fb)->linelen = %ld\n", FB(fb)->linelen);
+    if (fb->copied) {
+        PyMem_FREE(fb->buffer);
+        fb->buffer = NULL;
+    }
+    Py_XDECREF(line);
+    fb->line = NULL;
 
-    if (!FB(fb)->reached_eof && (FB(fb)->current_buffer_pos == FB(fb)->linelen)) {
-        // Read a line from the file.
-        //printf("_fb_load: calling readline\n");
-        PyObject *line = PyObject_CallFunctionObjArgs(FB(fb)->readline, NULL);
-        //printf("_fb_load: back from readline\n");
-        Py_XSETREF(FB(fb)->line, line);
-        if (line == NULL) {
-            //printf("_fb_load: STREAM_ERROR\n");
+    PyObject *line = PyObject_CallFunctionObjArgs(fb->readline, NULL);
+    fb->line = line;
+    if (line == NULL) {
+        return -1;
+    }
+    if (PyBytes_Check(line)) {
+        PyObject *uline;
+        char *enc;
+        // readline() returned bytes, so encode it.
+        // XXX if no encoding was specified, assume UTF-8.
+        if (fb->encoding == Py_None) {
+            enc = "utf-8";
+        }
+        else {
+            enc = PyBytes_AsString(fb->encoding);
+        }
+        uline = PyUnicode_FromEncodedObject(line, enc, NULL);
+        if (uline == NULL) {
+            // XXX temporary printf
+            printf("_fb_load: failed to decode bytes object\n");
             return STREAM_ERROR;
         }
-        if (PyBytes_Check(line)) {
-            PyObject *uline;
-            char *enc;
-            // readline() returned bytes, so encode it.
-            // XXX if no encoding was specified, assume UTF-8.
-            if (FB(fb)->encoding == Py_None) {
-                enc = "utf-8";
-            }
-            else {
-                enc = PyBytes_AsString(FB(fb)->encoding);
-            }
-            uline = PyUnicode_FromEncodedObject(line, enc, NULL);
-            if (uline == NULL) {
-                // XXX temporary printf
-                printf("_fb_load: failed to decode bytes object\n");
-                return STREAM_ERROR;
-            }
-            Py_SETREF(FB(fb)->line, uline);
-        }
-
-        // Cache data about the line in the fb object.
-        FB(fb)->unicode_kind = PyUnicode_KIND(FB(fb)->line);
-        FB(fb)->unicode_data = PyUnicode_DATA(FB(fb)->line);
-        FB(fb)->linelen = PyUnicode_GET_LENGTH(FB(fb)->line);
-
-        // Reset the character position to 0.
-        FB(fb)->current_buffer_pos = 0;
-
-        // If readline() returned 0, we've reached the end of the file.
-        if (FB(fb)->linelen == 0) {
-            FB(fb)->reached_eof = true;
-        }
+        Py_SETREF(fb->line, uline);
     }
-    //printf("_fb_load: returning 0\n");
-    return 0;
+
+    fb->linelen = PyUnicode_GET_LENGTH(fb->line);
+
+    if (PyUnicode_KIND(fb->line) == PyUnicode_4BYTE_KIND) {
+        fb->copied = false;
+        fb->buffer = PyUnicode_4BYTE_DATA(fb->line);
+    }
+    else {
+        /*
+         * NOTE: this is not ideal, we could also try to support other unicode
+         *       widths, or copy into a buffer we own for slightly better speed
+         */
+        fb->copied = true;
+        fb->buffer = PyUnicode_AsUCS4Copy(fb->line);
+    }
+
+    if (fb->linelen == 0) {
+        return BUFFER_IS_FILEEND;
+    }
+    return BUFFER_IS_LINEND;
 }
 
-/*
- *  char32_t fb_fetch(file_buffer *fb)
- *
- *  Get a single character from the current line, and advance the
- *  buffer pointer.
- *
- *  Returns STREAM_EOF when the end of the file is reached.
- *  XXX The following comments are probably no longer correct... XXX
- *  The sequence '\r\n' is treated as a single '\n'.  That is, when the next
- *  two bytes in the buffer are '\r\n', the buffer pointer is advanced by 2
- *  and '\n' is returned.
- *  When '\n' is returned, fb->line_number is incremented.
- */
 
-static char32_t
-fb_fetch(void *fb)
+static int
+fb_fetchnextbuf(python_file_by_line *fb, char32_t **start, char32_t **end)
 {
-    char32_t c;
-  
-    //printf("fb_fetch: starting, fb = %lld\n", fb);
+    int status = _fb_load();
 
-    if (_fb_load(fb) != 0) {
-        return STREAM_ERROR;
-    }
-    if (FB(fb)->reached_eof) {
-        return STREAM_EOF;
-    }
-
-    c = (char32_t) PyUnicode_READ(FB(fb)->unicode_kind,
-                                  FB(fb)->unicode_data,
-                                  FB(fb)->current_buffer_pos);
-    FB(fb)->current_buffer_pos++;
-    if (c == '\n') {
-        FB(fb)->line_number++;
-    }
-    return c;
+    *start = fb->buf;
+    *end = fb->buf + fb->linelen;
+    return status;
 }
 
-
-/*
- *  char32_t fb_next(file_buffer *fb)
- *
- *  Returns the next byte in the buffer, but does not advance the pointer.
- *  If the next two characters in the buffer are "\r\n", '\n' is returned.
- */
-
-static char32_t
-fb_next(void *fb)
-{
-    char32_t c;
-
-    if (_fb_load(fb) != 0) {
-        return STREAM_ERROR;
-    }
-    if (FB(fb)->reached_eof) {
-        return STREAM_EOF;
-    }
-
-    c = (char32_t) PyUnicode_READ(FB(fb)->unicode_kind,
-                                  FB(fb)->unicode_data,
-                                  FB(fb)->current_buffer_pos);
-    return c;
-}
-
-/*
- *  fb_skipline(void *fb)
- *
- *  Read bytes from the buffer until a newline or the end of the file is reached.
- *
- *  The return value is 0 if no errors occurred.
- */
-
-static uint32_t
-fb_skipline(void *fb)
-{
-    char32_t c;
-
-    c = fb_next(fb);
-    if (c == STREAM_ERROR) {
-        return c;
-    }
-    while (c != '\n' && c != STREAM_EOF) {
-        fb_fetch(fb);
-        c = fb_next(fb);
-        if (c == STREAM_ERROR) {
-            return c;
-        }
-    }
-    if (c == '\n') {
-        fb_fetch(fb);
-    }
-    return 0;
-}
-
-
-/*
- *  fb_skiplines(void *fb, int num_lines)
- *
- *  Skip num_lines; calls fb_skipline(fb) num_lines times, or until the end of
- *  the file is reached.
- *
- *  The return value is 0 if no errors occurred.
- */
-
-static uint32_t
-fb_skiplines(void *fb, int num_lines)
-{
-    int32_t status;
-    char32_t c;
-
-    while (num_lines > 0) {
-        status = fb_skipline(fb);
-        if (status != 0) {
-            return status;
-        }
-        c = fb_next(fb);
-        if (c == STREAM_EOF) {
-            break;
-        }
-        if (c == STREAM_ERROR) {
-            // Error
-            return c;
-        }
-        --num_lines;
-    }
-    return 0;
-}
-
-// XXX Is long int really the correct type? Probably no, should be `npy_off_t`
-static long int
-fb_tell(void *fb)
-{
-    long int pos;
-    PyObject *obj = PyObject_CallFunctionObjArgs(FB(fb)->tell, NULL);
-    // XXX Check for error.
-    pos = PyLong_AsLong(obj);
-    return pos;
-}
 
 static int
 fb_seek(void *fb, long int pos)
@@ -295,6 +168,7 @@ fb_seek(void *fb, long int pos)
     FB(fb)->reached_eof = false;
     return status;
 }
+
 
 static int
 stream_del(stream *strm, int restore)
@@ -318,6 +192,10 @@ stream_del(stream *strm, int restore)
     Py_XDECREF(fb->seek);
     Py_XDECREF(fb->tell);
     Py_XDECREF(fb->line);
+
+    if (copied) {
+        PyMem_FREE(fb->buf);
+    }
 
     free(fb);
     free(strm);
@@ -388,14 +266,9 @@ stream_python_file_by_line(PyObject *obj, PyObject *encoding)
     fb->reached_eof = 0;
 
     strm->stream_data = (void *) fb;
-    strm->stream_fetch = &fb_fetch;
-    strm->stream_peek = &fb_next;
-    strm->stream_skipline = &fb_skipline;
-    strm->stream_skiplines = &fb_skiplines;
-    strm->stream_linenumber = &fb_line_number;
-    strm->stream_tell = &fb_tell;
+    strm->stream_nextbuf = &fb_nextbuf;
     strm->stream_seek = &fb_seek;
-    strm->stream_close = &stream_del;  // FIXME: compiler warning
+    strm->stream_close = &stream_del;
 
     return strm;
 

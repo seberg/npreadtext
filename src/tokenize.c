@@ -242,4 +242,3 @@ tokenize(stream *s, tokenizer_state *ts,
 
     return result;
 }
-

@@ -16,7 +16,9 @@
 
 typedef struct {
     int state;
+    int buf_state;
     size_t curr_field;
+    size_t curr_line;
     /* information about the current word, may or may not be owned by us */
     char32_t *const word_pos;
     char32_t *const word_end;
@@ -24,7 +26,7 @@ typedef struct {
     char32_t **pos;
     char32_t **end;
     /*
-     * In some cases, we may need to copy words.  We will use this length
+     * In some cases, we need to copy words.  We will use this length
      * and state.  The word buffer only grows (we assume this is OK).
      * TODO: If this turns out to be used regularly, it may make sense to
      *       initialize this to a stack allocated version that is usually
