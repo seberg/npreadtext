@@ -77,14 +77,13 @@
  *  * The row has more fields than MAX_NUM_COLUMNS.
  */
 
-static char32_t **
-tokenize_sep(stream *s,
+char32_t **
+tokenize(stream *s,
         char32_t *word_buffer, int word_buffer_size,
         parser_config *pconfig, int *p_num_fields, int *p_error_type)
 {
     int n;
     char32_t c;
-    int state;
     char32_t *words[MAX_NUM_COLUMNS];
     char32_t *p_word_start, *p_word_end;
     int field_number;
@@ -114,7 +113,15 @@ tokenize_sep(stream *s,
         return NULL;
     }
 
-    state = TOKENIZE_INIT;
+    /* state when a new field begins: */
+    int initial_state = TOKENIZE_UNQUOTED;
+    /* state at beginning of line: */
+    int state = TOKENIZE_INIT;
+    if (sep_char == '\0') {
+        sep_char = ' ';
+        initial_state = TOKENIZE_WHITESPACE;
+        state = TOKENIZE_WHITESPACE;
+    }
     field_number = 0;
     p_word_start = word_buffer;
     p_word_end = p_word_start;
@@ -134,6 +141,14 @@ tokenize_sep(stream *s,
         else {
             havec = false;
         }
+
+        if (state == TOKENIZE_WHITESPACE && c == ' ') {
+            continue;
+        }
+        else if (state == TOKENIZE_WHITESPACE) {
+            state = TOKENIZE_INIT;
+        }
+
         if (state == TOKENIZE_INIT || state == TOKENIZE_UNQUOTED) {
             if (state == TOKENIZE_INIT && c == quote_char) {
                 // Opening quote. Switch state to TOKENIZE_QUOTED.
@@ -143,7 +158,17 @@ tokenize_sep(stream *s,
                 // Ignore this leading space.
             }
             else if ((c == sep_char) ||  ISCOMMENT(c, s, cc0, cc1) || (c == '\n') || (c == STREAM_EOF)) {
-                // End of a field.  Save the field, and switch to state TOKENIZE_INIT.
+                if (ISCOMMENT(c, s, cc0, cc1)) {
+                    stream_skipline(s);  /* Finished line: forward stream */
+                }
+                if (state == TOKENIZE_INIT) {
+                    if (c == STREAM_EOF) {
+                        break;
+                    }
+                    /* Ignore empty line (may contain spaces if ignoring) */
+                    continue;
+                }
+                // End of a field.  Save the field, and switch to `initial_state`.
                 if (ignore_trailing_spaces && trailing_space_count > 0) {
                     p_word_end -= trailing_space_count;
                 }
@@ -152,15 +177,12 @@ tokenize_sep(stream *s,
                 ++field_number;
                 ++p_word_end;
                 p_word_start = p_word_end;
-                if (c == '\n' || c == STREAM_EOF) {
-                    break;
-                }
-                else if (ISCOMMENT(c, s, cc0, cc1)) {
-                    stream_skipline(s);
+                if (c != sep_char) {
+                    /* Everything not the sep_char ends the line */
                     break;
                 }
                 trailing_space_count = 0;
-                state = TOKENIZE_INIT;
+                state = initial_state;
             }
             else {
                 *p_word_end = c;
@@ -229,201 +251,5 @@ tokenize_sep(stream *s,
         result[n] = words[n];
     }
 
-    return result;
-}
-
-
-/*
- *  XXX Currently, 'white space' is simply one or more space characters.
- *      This could be extended to sequence of spaces and tabs without too
- *      much effort.
- *
- *  XXX Returns NULL for several different error cases or edge cases.
- *      This needs to be refined.
- */
-
-static char32_t **
-tokenize_ws(stream *s,
-        char32_t *word_buffer, int word_buffer_size,
-        parser_config *pconfig, int *p_num_fields, int *p_error_type)
-{
-    int n;
-    char32_t c;
-    int state;
-    char32_t *words[MAX_NUM_COLUMNS];
-    char32_t *p_word_start, *p_word_end;
-    int field_number;
-    char32_t **result;
-
-    char32_t cc0 = pconfig->comment[0];
-    char32_t cc1 = pconfig->comment[1];
-    char32_t quote_char = pconfig->quote;
-    bool allow_embedded_newline = pconfig->allow_embedded_newline;
-
-    *p_error_type = 0;
-
-    while (true) {
-        // This is true when we enter the loop below. It becomes false
-        // and remains false in subsequent iterations of the loop.
-        bool havec = true;
-
-        c = stream_fetch(s);
-        while (ISCOMMENT(c, s, cc0, cc1)) {
-            stream_skipline(s);
-            c = stream_fetch(s);
-        }
-
-        if (c == STREAM_EOF) {
-            *p_error_type = ERROR_NO_DATA;
-            return NULL;
-        }
-
-        state = TOKENIZE_WHITESPACE;
-        field_number = 0;
-        p_word_start = word_buffer;
-        p_word_end = p_word_start;
-
-        while (true) {
-            if ((p_word_end - word_buffer) >= word_buffer_size) {
-                *p_error_type = ERROR_TOO_MANY_CHARS;
-                break;
-            }
-            if (field_number == MAX_NUM_COLUMNS) {
-                *p_error_type = ERROR_TOO_MANY_FIELDS;
-                break;
-            }
-            if (!havec) {
-                c = stream_fetch(s);
-            }
-            else {
-                havec = false;
-            }
-
-            if (state == TOKENIZE_WHITESPACE) {
-                if (c == quote_char) {
-                    // Opening quote.  Switch state to TOKENIZE_QUOTED
-                    state = TOKENIZE_QUOTED;
-                }
-                else if (c == '\n' || c == STREAM_EOF) {
-                    break;
-                }
-                else if (c != ' ') {
-                    *p_word_end = c;
-                    ++p_word_end;
-                    state = TOKENIZE_UNQUOTED;
-                }
-            }
-            else if (state == TOKENIZE_UNQUOTED) {
-                if ((c == ' ') || (c == '\n') || (c == STREAM_EOF)) {
-                    *p_word_end = '\0';
-                    words[field_number] = p_word_start;
-                    ++field_number;
-                    ++p_word_end;
-                    p_word_start = p_word_end;
-                    if (c == '\n' || c == STREAM_EOF) {
-                        break;
-                    }
-                    // Switch state to TOKENIZE_WHITESPACE.
-                    state = TOKENIZE_WHITESPACE;
-                }
-                else {
-                    *p_word_end = c;
-                    ++p_word_end;
-                }
-            }
-            else if (state == TOKENIZE_QUOTED) {
-                if ((c != quote_char && c != '\n' && c != STREAM_EOF) || (c == '\n' && allow_embedded_newline)) {
-                    *p_word_end = c;
-                    ++p_word_end;
-                }
-                else if (c == quote_char && stream_peek(s) == quote_char) {
-                    *p_word_end = c;
-                    ++p_word_end;
-                    // Skip the second quote char.
-                    stream_fetch(s);
-                }
-                //else if (c == quote_char && fb_peek(fb) != ' ' && fb_peek(fb) != '\n' && fb_peek(fb) != STREAM_EOF) {
-                //    // A quote, but the next character is not a space, a newline,
-                //    // or EOF, so apparently this is not a closing quote.
-                //    // The quote becomes part of the data.
-                //    *p_word_end = c;
-                //    ++p_word_end;
-                //}
-                else if (c == quote_char) {
-                    // Closing quote.  Just switch to TOKENIZE_UNQUOTED.
-                    // Note that this does not terminate the field.  This means
-                    // an input such as
-                    // `"ABC"123"DEF`
-                    // will be processed as a single field, containing
-                    // `ABC123"DEF`
-                    // Not sure if this is desirable.
-                    state = TOKENIZE_UNQUOTED;
-                }
-                else {
-                    // c must be '\n' or STREAM_EOF.
-                    // If we are here, it means we've reached the end of the file
-                    // while inside quotes, or the end of the line while inside
-                    // quotes and 'allow_embedded_newline' is 0.
-                    // This could be treated as an error, but for now, we'll simply
-                    // end the field (and the row).
-                    *p_word_end = '\0';
-                    words[field_number] = p_word_start;
-                    ++field_number;
-                    ++p_word_end;
-                    p_word_start = p_word_end;
-                    break;
-                }
-            }
-        }
-
-        if (*p_error_type) {
-            return NULL;
-        }
-
-        if (field_number != 0) {
-            break;
-        }
-
-        // If we're here, the line was blank.
-        // Currently we ignore blank lines (the configuration
-        // parameter is ignored).
-
-    }
-
-    *p_num_fields = field_number;
-
-    result = (char32_t **) malloc(sizeof(char32_t *) * field_number);
-    if (result == NULL) {
-        *p_error_type = ERROR_OUT_OF_MEMORY;
-        return NULL;
-    }
-
-    for (n = 0; n < field_number; ++n) {
-        result[n] = words[n];
-    }
-
-    return result;
-}
-
-
-char32_t **
-tokenize(stream *s,
-        char32_t *word_buffer, int word_buffer_size,
-        parser_config *pconfig, int *p_num_fields, int *p_error_type)
-{
-    char32_t **result;
-
-    if ((pconfig->delimiter == '\0') || (pconfig->delimiter == ' ')) {
-        result = tokenize_ws(s, word_buffer, word_buffer_size,
-                             pconfig,
-                             p_num_fields,
-                             p_error_type);
-    }
-    else {
-        result = tokenize_sep(s, word_buffer, word_buffer_size,
-                              pconfig,
-                              p_num_fields,
-                              p_error_type);
-    }
     return result;
 }

@@ -6,7 +6,7 @@ from ._readers import read
 def _loadtxt(*args, **kwds):
     delimiter = kwds.pop('delimiter', None)
     if delimiter is None:
-        delimiter = ' '
+        delimiter = ''
 
     dtype = kwds.pop('dtype', None)
     if dtype is None:
