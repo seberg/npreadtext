@@ -19,7 +19,7 @@ typedef struct _read_error {
     int line_number;
     int field_number;
     int char_position;
-    char typecode;
+    PyArray_Descr *descr;
     // int32_t itemsize;  // not sure this is needed.
     int32_t column_index; // for ERROR_INVALID_COLUMN_INDEX;
 } read_error_type;
@@ -37,6 +37,7 @@ read_rows(stream *s,
         int *nrows, int num_field_types, field_type *field_types,
         parser_config *pconfig, int32_t *usecols, int num_usecols,
         int skiplines, PyObject *converters, void *data_array,
-        int *num_cols, read_error_type *read_error);
+        int *num_cols, bool homogeneous, bool needs_init,
+        read_error_type *read_error);
 
 #endif

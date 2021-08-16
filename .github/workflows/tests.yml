@@ -12,7 +12,7 @@ jobs:
         os: [ubuntu, macos]  # Add windows
         python-version: [3.7, 3.8, 3.9]
         numpy-version: [1.19.*, 1.20.*, 1.21.*]
-        compat-test-ignore: ["test_converters_decode,test_converters_nodecode,test_comments_multiple,test_str_dtype,test_dtype_with_object,test_from_float_hex,test_binary_load"]
+        compat-test-ignore: ["test_converters_decode,test_converters_nodecode,test_comments_multiple,test_str_dtype,test_from_float_hex,test_binary_load"]
 
     steps:
     - uses: actions/checkout@v2
@@ -46,12 +46,6 @@ jobs:
       run: |
         python compat/check_loadtxt_compat.py -v 3 -t \
         "numpy.lib.tests.test_regression::TestRegression::test_loadtxt_fields_subarrays"
-
-    - name: Run C tests
-      run: |
-        cd src/ctests
-        bash build_runtest.sh
-        ./runtests
 
   loadtxt-full-compat:
     runs-on: ${{ matrix.os }}-latest
