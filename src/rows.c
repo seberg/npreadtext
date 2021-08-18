@@ -275,7 +275,7 @@ read_rows(stream *s,
     read_error->error_type = 0;
 
     for (; skiplines > 0; skiplines--) {
-        ts.state = TOKENIZE_FINALIZE_LINE;
+        ts.state = TOKENIZE_GOTO_LINE_END;
         ts_result = tokenize(s, &ts, pconfig);
         if (ts_result < 0) {
             return NULL;
@@ -297,7 +297,6 @@ read_rows(stream *s,
                          ((field_types[0].typecode == 'S') ||
                           (field_types[0].typecode == 'U')));
 
-    int rows_seen = -1;  /* also counts empty lines */
     int row_count = 0;  /* number of rows actually processed */
     while ((*nrows < 0 || row_count < *nrows) && ts_result == 0) {
         ts_result = tokenize(s, &ts, pconfig);
@@ -306,7 +305,6 @@ read_rows(stream *s,
         }
         current_num_fields = ts.num_fields;
         field_info *fields = ts.fields;
-        rows_seen += 1;
         if (ts.num_fields == 0) {
             continue;  /* Ignore empty line */
         }
@@ -437,7 +435,7 @@ read_rows(stream *s,
 
         if (!usecols && (actual_num_fields != current_num_fields)) {
             read_error->error_type = ERROR_CHANGED_NUMBER_OF_FIELDS;
-            read_error->line_number = rows_seen;
+            read_error->line_number = row_count + 1;
             read_error->column_index = current_num_fields;
             if (use_blocks) {
                 blocks_destroy(blks);
@@ -474,7 +472,7 @@ read_rows(stream *s,
                 }
                 if ((k < 0) || (k >= current_num_fields)) {
                     read_error->error_type = ERROR_INVALID_COLUMN_INDEX;
-                    read_error->line_number = rows_seen - 1;
+                    read_error->line_number = row_count - 1;
                     read_error->column_index = usecols[j];
                     break;
                 }
@@ -486,7 +484,7 @@ read_rows(stream *s,
             //printf("<-- The current field!\n");
 
             read_error->error_type = ERROR_OK;
-            read_error->line_number = rows_seen - 1;
+            read_error->line_number = row_count - 1;
             read_error->field_number = k;
             read_error->char_position = -1; // FIXME
             read_error->descr = field_types[f].descr;

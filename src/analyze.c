@@ -98,7 +98,7 @@ analyze(stream *s, parser_config *pconfig, int skiplines, int numrows,
     char32_t imaginary_unit = pconfig->imaginary_unit;
 
     for (; skiplines > 0; skiplines--) {
-        ts.state = TOKENIZE_FINALIZE_LINE;
+        ts.state = TOKENIZE_GOTO_LINE_END;
         ts_result = tokenize(s, &ts, pconfig);
         if (ts_result < 0) {
             return -1;

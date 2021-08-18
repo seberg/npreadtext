@@ -191,6 +191,9 @@ def test_unpack_array():
 
 
 def test_blank_lines_spaces_delimit():
+    # NOTE: It is unclear that the `  # comment` should succeed. Except
+    #       for delimiter=None, which should use any whitespace (and maybe
+    #       should just be implemented closer to Python).
     txt = StringIO('1 2 30\n\n4 5 60\n     \n7 8 90\n  # comment\n3 2 1')
     a = read(txt, delimiter=' ', comment="#")
     assert_equal(a.dtype, np.uint8)
@@ -203,6 +206,11 @@ def test_blank_lines_normal_delimiter():
     assert_equal(a.dtype, np.uint8)
     assert_equal(a, np.array([[1, 2, 30], [4, 5, 60], [7, 8, 90], [3, 2, 1]],
                              dtype=np.uint8))
+
+def test_quoted_field_is_not_empty():
+    txt = StringIO('1\n\n"4"\n""')
+    a = read(txt, delimiter=",", dtype="U1")
+    assert_equal(a, np.array([["1"], ["4"], [""]]))
 
 def test_max_rows():
     txt = StringIO('1.5,2.5\n3.0,4.0\n5.5,6.0')

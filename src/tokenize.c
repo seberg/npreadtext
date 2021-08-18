@@ -146,38 +146,77 @@ tokenize(stream *s, tokenizer_state *ts, parser_config *const config)
     bool is_quoted = false;
     bool started_saving_word = false;
 
-    int res = 0;
+    int finished_reading_file = 0;
 
     while (1) {
         if (NPY_UNLIKELY(pos >= ts->end)) {
+            if (ts->buf_state == BUFFER_IS_LINEND &&
+                    (ts->state == TOKENIZE_LINE_END
+                     || ts->state == TOKENIZE_EAT_CRLF)) {
+                /* Finished line, do not read anymore (also do not eat \n) */
+                goto finish;
+            }
             /* fetch new data */
             ts->buf_state = stream_nextbuf(s, &ts->pos, &ts->end);
             if (ts->buf_state < 0) {
                 return -1;
             }
-            else if (ts->pos == ts->end) {
-                if (ts->buf_state != BUFFER_IS_FILEEND) {
-                    PyErr_SetString(PyExc_RuntimeError,
-                            "Reader returned an empty buffer, "
-                            "but file did not end.");
-                    return -1;
-                }
+            if (ts->buf_state == BUFFER_IS_FILEEND) {
                 if (ts->state & TOKENIZE_OUTSIDE_FIELD) {
-                    res = 1;
+                    finished_reading_file = 1;
                     goto finish;
                 }
                 /* We probably still need to append the last field */
-                ts->state = TOKENIZE_FINALIZE_FILE;
+                ts->state = TOKENIZE_LINE_END;
+            }
+            else if (ts->pos == ts->end) {
+                if (ts->buf_state != BUFFER_IS_LINEND) {
+                    PyErr_SetString(PyExc_RuntimeError,
+                            "Reader returned an empty buffer, "
+                            "but did not indicate file or line end.");
+                    return -1;
+                }
+                goto finish;
             }
             pos = ts->pos;
+        }
+
+        if (ts->state == TOKENIZE_INIT) {
+            /*
+             * Beginning of a new field, doing it outside the loops allows
+             * to fall into the parsing.  Note that both field tokenizers
+             * handle an empty field just fine.
+             */
+            if (config->ignore_leading_spaces) {
+                while (pos < ts->end && *pos == ' ') {
+                    pos++;
+                }
+                if (pos == ts->end) {
+                    continue;
+                }
+            }
+            /* Setting chunk effectively starts the field */
+            if (*pos == config->quote) {
+                is_quoted = true;
+                ts->state = TOKENIZE_QUOTED;
+                pos++;
+            }
+            else {
+                is_quoted = false;
+                ts->state = TOKENIZE_UNQUOTED;
+            }
         }
 
         switch (ts->state) {
             case TOKENIZE_UNQUOTED:
                 chunk_start = pos;
                 for (; pos < ts->end; pos++) {
-                    if (*pos == '\r' || *pos == '\n') {
+                    if (*pos == '\n') {
                         ts->state = TOKENIZE_EAT_CRLF;
+                        break;
+                    }
+                    else if (*pos == '\r') {
+                        ts->state = TOKENIZE_LINE_END;
                         break;
                     }
                     else if (*pos == config->delimiter) {
@@ -190,7 +229,7 @@ tokenize(stream *s, tokenizer_state *ts, parser_config *const config)
                             break;
                         }
                         else {
-                            ts->state = TOKENIZE_FINALIZE_LINE;
+                            ts->state = TOKENIZE_GOTO_LINE_END;
                             break;
                         }
                     }
@@ -202,10 +241,15 @@ tokenize(stream *s, tokenizer_state *ts, parser_config *const config)
             case TOKENIZE_QUOTED:
                 chunk_start = pos;
                 for (; pos < ts->end; pos++) {
-                    if (!config->allow_embedded_newline && (
-                                *pos == '\r' || *pos == '\n')) {
-                        ts->state = TOKENIZE_EAT_CRLF;
-                        break;
+                    if (!config->allow_embedded_newline) {
+                        if (*pos == '\n') {
+                            ts->state = TOKENIZE_EAT_CRLF;
+                            break;
+                        }
+                        else if (*pos == '\r') {
+                            ts->state = TOKENIZE_LINE_END;
+                            break;
+                        }
                     }
                     else if (*pos != config->quote) {
                         /* inside the field, nothing to do. */
@@ -219,42 +263,9 @@ tokenize(stream *s, tokenizer_state *ts, parser_config *const config)
                 pos++;
                 break;
 
-            case TOKENIZE_WHITESPACE:
-                for (; pos < ts->end; pos++) {
-                    if (*pos != ' ') {
-                        ts->state = TOKENIZE_INIT;
-                        break;
-                    }
-                }
-                break;
-
-            case TOKENIZE_INIT:
-                /*
-                 * Beginning of a new field.
-                 */
-                if (config->ignore_leading_spaces) {
-                    while (pos < ts->end && *pos == ' ') {
-                        pos++;
-                    }
-                    if (pos == ts->end) {
-                        break;
-                    }
-                }
-                /* Setting chunk effectively starts the field */
-                if (*pos == config->quote) {
-                    is_quoted = true;
-                    ts->state = TOKENIZE_QUOTED;
-                    pos++;
-                }
-                else {
-                    is_quoted = false;
-                    ts->state = TOKENIZE_UNQUOTED;
-                }
-                break;
-
             case TOKENIZE_CHECK_COMMENT:
                 if (*pos == config->comment[1]) {
-                    ts->state = TOKENIZE_FINALIZE_LINE;
+                    ts->state = TOKENIZE_GOTO_LINE_END;
                     pos++;
                 }
                 else {
@@ -277,10 +288,9 @@ tokenize(stream *s, tokenizer_state *ts, parser_config *const config)
                 }
                 break;
 
-            case TOKENIZE_FINALIZE_LINE:
+            case TOKENIZE_GOTO_LINE_END:
                 if (ts->buf_state != BUFFER_MAY_CONTAIN_NEWLINE) {
-                    ts->state = TOKENIZE_INIT;
-                    ts->pos = ts->end;  /* advance to next buffer */
+                    pos = ts->end;  /* advance to next buffer */
                     goto finish;
                 }
                 for (; pos < ts->end; pos++) {
@@ -292,21 +302,16 @@ tokenize(stream *s, tokenizer_state *ts, parser_config *const config)
                 break;
 
             case TOKENIZE_EAT_CRLF:
-                /*
-                 * "Universal newline" support any two-character combination
-                 * of `\n` and `\r`.
-                 * TODO: Should probably only trigger for \r\n?
-                 */
-                ts->state = TOKENIZE_INIT;
-                if (*pos == '\n' || *pos == '\r') {
+                /* "Universal newline" support: remove \n in \r\n. */
+                if (*pos == '\n') {
                     pos++;
                 }
-
-                ts->pos = pos;
+                /* We are done for good if we reached here */
                 goto finish;
 
-            case TOKENIZE_FINALIZE_FILE:
-                break;  /* don't do anything,just need to copy back */
+            case TOKENIZE_LINE_END:
+                /* If we reach here, nothing to do except storing the field */
+                break;
 
             default:
                 assert(0);
@@ -329,14 +334,31 @@ tokenize(stream *s, tokenizer_state *ts, parser_config *const config)
                 return -1;
             }
             started_saving_word = false;
+            if (ts->state == TOKENIZE_LINE_END) {
+                goto finish;
+            }
         }
     }
 
   finish:
-    if (ts->num_fields == 1 && ts->fields[0].length == 0) {
+    /* NOTE: The fact that we have to append this field here is annoying... */
+    if (NPY_UNLIKELY(ts->state == TOKENIZE_INIT) && ts->num_fields != 0) {
+        /* There is a final empty field on this line */
+        if (copy_to_field_buffer(ts,
+                pos, pos, false, &word_start, &word_length) < 0) {
+            return -1;
+        }
+        if (add_field(ts, word_start, word_length, is_quoted) < 0) {
+            return -1;
+        }
+    }
+    else if (ts->num_fields == 1 && ts->fields[0].length == 0
+             && !ts->fields->quoted) {
         ts->num_fields--;
     }
-    return res;
+    ts->pos = pos;
+    ts->state = TOKENIZE_INIT;
+    return finished_reading_file;
 }
 
 
@@ -356,6 +378,8 @@ tokenizer_clear(tokenizer_state *ts)
 void
 tokenizer_init(tokenizer_state *ts, parser_config *config)
 {
+    /* State and buf_state could be moved into tokenize if we go by row */
+    ts->buf_state = BUFFER_MAY_CONTAIN_NEWLINE;
     ts->state = TOKENIZE_INIT;
     ts->num_fields = 0;
 
