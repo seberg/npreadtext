@@ -85,6 +85,11 @@ analyze(stream *s, parser_config *pconfig, int skiplines, int numrows,
 {
     int row_count = 0;
     int num_fields = 0;
+
+    int ts_result = 0;
+    tokenizer_state ts;
+    tokenizer_init(&ts, pconfig);
+
     field_type *types = NULL;
     integer_range *ranges = NULL;
 
@@ -92,16 +97,16 @@ analyze(stream *s, parser_config *pconfig, int skiplines, int numrows,
     char32_t sci = pconfig->sci;
     char32_t imaginary_unit = pconfig->imaginary_unit;
 
-    stream_skiplines(s, skiplines);
-    if (stream_peek(s) == STREAM_EOF) {
-        // Reached the end of the file while skipping lines.
-        // stream_close(s, RESTORE_INITIAL);
-        return 0;
-    }
-
-    char32_t *word_buffer = malloc(WORD_BUFFER_SIZE*sizeof(char32_t));
-    if (word_buffer == NULL) {
-        return ANALYZE_OUT_OF_MEMORY;
+    for (; skiplines > 0; skiplines--) {
+        ts.state = TOKENIZE_FINALIZE_LINE;
+        ts_result = tokenize(s, &ts, pconfig);
+        if (ts_result < 0) {
+            return -1;
+        }
+        else if (ts_result != 0) {
+            /* Fewer lines than skiplines is acceptable */
+            break;
+        }
     }
 
     // In this loop, types[k].itemsize will track the largest field length
@@ -112,16 +117,18 @@ analyze(stream *s, parser_config *pconfig, int skiplines, int numrows,
     // (If all the values are positive, ranges[k].imin will be 0.)
     // ranges[k].umax tracks the largest positive integer seen in the field.
     // (If all the values are negative, ranges[k].umax will be 0.)
-    while (row_count != numrows) {
-        int new_num_fields;
-        int tok_error_type;
-        char32_t **result;
+    while (row_count != numrows && ts_result == 0) {
+        size_t new_num_fields;
 
-        result = tokenize(s, word_buffer, WORD_BUFFER_SIZE,
-                          pconfig, &new_num_fields, &tok_error_type);
-        if (result == NULL) {
-            break;
+        ts_result = tokenize(s, &ts, pconfig);
+        if (ts_result < 0) {
+            return -1;
         }
+        if (ts.num_fields == 0) {
+            continue;  /* does not add a row */
+        }
+        new_num_fields = ts.num_fields;
+        field_info *fields = ts.fields;
 
         if (new_num_fields > num_fields) {
             // The first row, or a row with more fields than previously seen...
@@ -130,9 +137,6 @@ analyze(stream *s, parser_config *pconfig, int skiplines, int numrows,
             if (status != 0) {
                 // If this occurs, types and ranges have been freed in
                 // enlarge_type_tracking_array().
-                free(result);
-                free(word_buffer);
-                //fb_del(fb, RESTORE_INITIAL);
                 return ANALYZE_OUT_OF_MEMORY;
             }
             num_fields = new_num_fields;
@@ -140,10 +144,11 @@ analyze(stream *s, parser_config *pconfig, int skiplines, int numrows,
 
         for (int k = 0; k < new_num_fields; ++k) {
             char typecode;
-            int field_len;
             int64_t imin;
             uint64_t umax;
-            typecode = classify_type(result[k], decimal, sci, imaginary_unit,
+
+            char32_t *token = ts.field_buffer + fields[k].offset;
+            typecode = classify_type(token, decimal, sci, imaginary_unit,
                                      &imin, &umax,
                                      types[k].typecode);
             if (typecode == 'i' && imin < ranges[k].imin) {
@@ -155,16 +160,12 @@ analyze(stream *s, parser_config *pconfig, int skiplines, int numrows,
             if (typecode != '*') {
                 types[k].typecode = typecode;
             }
-            field_len = strlen32(result[k]);
-            if (field_len > types[k].itemsize) {
-                types[k].itemsize = field_len;
+            if (fields[k].length > types[k].itemsize) {
+                types[k].itemsize = fields[k].length;
             }
         }
-        free(result);
         ++row_count;
     }
-
-    free(word_buffer);
 
     // At this point, any field that contained only unsigned integers
     // or only integers (some negative) has been classified as typecode='Q'
@@ -207,6 +208,7 @@ analyze(stream *s, parser_config *pconfig, int skiplines, int numrows,
     *p_field_types = types;
 
     //fb_del(fb, RESTORE_INITIAL);
-
+    /* TODO: Also clean up on failure! */
+    tokenizer_clear(&ts);
     return row_count;
 }

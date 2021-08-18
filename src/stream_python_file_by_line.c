@@ -50,7 +50,7 @@ typedef struct _python_file_by_line {
     PyObject *line;
 
     bool copied;
-    char32_t buf;
+    char32_t *buffer;
 
     /* Length of line */
     Py_ssize_t linelen;
@@ -88,9 +88,10 @@ _fb_load(python_file_by_line *fb)
 {
     if (fb->copied) {
         PyMem_FREE(fb->buffer);
+        fb->copied = false;
         fb->buffer = NULL;
     }
-    Py_XDECREF(line);
+    Py_XDECREF(fb->line);
     fb->line = NULL;
 
     PyObject *line = PyObject_CallFunctionObjArgs(fb->readline, NULL);
@@ -113,7 +114,7 @@ _fb_load(python_file_by_line *fb)
         if (uline == NULL) {
             // XXX temporary printf
             printf("_fb_load: failed to decode bytes object\n");
-            return STREAM_ERROR;
+            return -1;
         }
         Py_SETREF(fb->line, uline);
     }
@@ -121,7 +122,6 @@ _fb_load(python_file_by_line *fb)
     fb->linelen = PyUnicode_GET_LENGTH(fb->line);
 
     if (PyUnicode_KIND(fb->line) == PyUnicode_4BYTE_KIND) {
-        fb->copied = false;
         fb->buffer = PyUnicode_4BYTE_DATA(fb->line);
     }
     else {
@@ -141,12 +141,12 @@ _fb_load(python_file_by_line *fb)
 
 
 static int
-fb_fetchnextbuf(python_file_by_line *fb, char32_t **start, char32_t **end)
+fb_nextbuf(python_file_by_line *fb, char32_t **start, char32_t **end)
 {
-    int status = _fb_load();
+    int status = _fb_load(fb);
 
-    *start = fb->buf;
-    *end = fb->buf + fb->linelen;
+    *start = fb->buffer;
+    *end = fb->buffer + fb->linelen;
     return status;
 }
 
@@ -160,6 +160,10 @@ fb_seek(void *fb, long int pos)
     // XXX Check for error, and
     // DECREF where appropriate...
     PyObject *result = PyObject_Call(FB(fb)->seek, args, NULL);
+    if (result == NULL) {
+        return -1;
+    }
+    Py_DECREF(result);
     // XXX Check for error!
     FB(fb)->line_number = 1;
     //FB(fb)->buffer_file_pos = FB(fb)->initial_file_pos;
@@ -193,8 +197,8 @@ stream_del(stream *strm, int restore)
     Py_XDECREF(fb->tell);
     Py_XDECREF(fb->line);
 
-    if (copied) {
-        PyMem_FREE(fb->buf);
+    if (fb->copied) {
+        PyMem_FREE(fb->buffer);
     }
 
     free(fb);
@@ -218,6 +222,9 @@ stream_python_file_by_line(PyObject *obj, PyObject *encoding)
         fprintf(stderr, "stream_file: malloc() failed.\n");
         return NULL;
     }
+
+    fb->buffer = NULL;
+    fb->copied = false;
 
     fb->file = NULL;
     fb->readline = NULL;
@@ -265,7 +272,7 @@ stream_python_file_by_line(PyObject *obj, PyObject *encoding)
     //fb->last_pos = 0;
     fb->reached_eof = 0;
 
-    strm->stream_data = (void *) fb;
+    strm->stream_data = (void *)fb;
     strm->stream_nextbuf = &fb_nextbuf;
     strm->stream_seek = &fb_seek;
     strm->stream_close = &stream_del;

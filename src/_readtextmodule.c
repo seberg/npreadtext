@@ -216,6 +216,9 @@ _readtext_from_stream(stream *s, char *filename, parser_config *pc,
                 converters, PyArray_DATA(arr), &num_cols, homogeneous,
                 needs_init,  /* unused, data is allocated and initialized */
                 &read_error);
+        if (result == NULL && PyErr_Occurred()) {
+            return NULL;
+        }
         if (read_error.error_type != 0) {
             /* TODO: Has to use the goto finish here, probably. */
             free(ft);
@@ -238,6 +241,9 @@ _readtext_from_stream(stream *s, char *filename, parser_config *pc,
                                  cols, ncols, skiprows, converters,
                                  NULL, &num_cols, homogeneous, needs_init,
                                  &read_error);
+        if (result == NULL && PyErr_Occurred()) {
+            return NULL;
+        }
         if (read_error.error_type != 0) {
             /* TODO: Has to use the goto finish here, probably. */
             /*
@@ -360,6 +366,11 @@ _readtext_from_file_object(PyObject *self, PyObject *args, PyObject *kwargs)
     pc.ignore_trailing_spaces = false;
     pc.ignore_blank_lines = true;
     pc.strict_num_fields = false;
+
+    if (pc.delimiter == ' ' || pc.delimiter == '\0') {
+        pc.delimiter = ' ';
+        pc.ignore_leading_spaces = true;
+    }
 
     /*
      * TODO: This needs some hefty input validation!

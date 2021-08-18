@@ -1,7 +1,10 @@
 
+#include <Python.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <string.h>
 
 #include "typedefs.h"
 #include "stream.h"
@@ -11,8 +14,7 @@
 #include "error_types.h"
 #include "parser_config.h"
 
-
-#define ISCOMMENT(c, s, c0, c1) ((c == c0) && ((c1 == 0) || (stream_peek(s) == c1)))
+#include "numpy/ndarraytypes.h"
 
 /*
     How parsing quoted fields works:
@@ -42,203 +44,328 @@
     at the end of a field.
 */
 
-/*
- *  tokenize a row of input, with an explicit field delimiter char (sep_char).
- *
- *  word_buffer must point to a block of memory with length word_buffer_size.
- *
- *  The fields are stored in word_buffer, and words is an array of
- *  pointers to the starts of the words parsed so far.
- *
- *  pconfig is in input; *pconfig is a parser_config instance.
- *
- *  Returns an array of char*.  Points to memory malloc'ed here so it
- *  must be freed by the caller.
- *
- *  *p_num_fields and *p_error_type are outputs.
- *  *p_num_fields is the number of fields (i.e. number of tokens) that
- *  were parsed.
- *  *p_error_type is an error code.
- *
- *  Returns NULL for several different conditions:
- *  * Reached EOF before finding *any* data to parse.
- *  * The amount of text copied to word_buffer exceeded the buffer size.
- *  * Failed to parse a single field. This is the condition field_number == 0
- *    that is checked after the main loop.  To do: double check exactly what
- *    can lead to this condition.
- *  * Out of memory: could not allocate the memory to hold the array of
- *    char pointer that the function returns.
- *  * The row has more fields than MAX_NUM_COLUMNS.
- */
 
-char32_t **
-tokenize(stream *s, tokenizer_state *ts,
-        char32_t *word_buffer, int word_buffer_size,
-        parser_config *pconfig, int *p_num_fields, int *p_error_type)
+static size_t
+next_size(size_t size) {
+    return ((size_t)size + 3) & ~(size_t)3;
+}
+
+
+static int
+copy_to_field_buffer(tokenizer_state *ts,
+        char32_t *chunk_start, char32_t *chunk_end,
+        bool started_saving_word,
+        size_t *word_start, size_t *word_length)
 {
-    int n;
-    char32_t c;
-    char32_t *words[MAX_NUM_COLUMNS];
-    char32_t *p_word_start, *p_word_end;
-    int field_number;
-    char32_t **result;
+    size_t chunk_length = chunk_end - chunk_start;
 
-    char32_t cc0 = pconfig->comment[0];
-    char32_t cc1 = pconfig->comment[1];
-    char32_t sep_char = pconfig->delimiter;
-    char32_t quote_char = pconfig->quote;
-    bool ignore_leading_spaces = pconfig->ignore_leading_spaces;
-    bool ignore_trailing_spaces = pconfig->ignore_trailing_spaces;
-    bool allow_embedded_newline = pconfig->allow_embedded_newline;
-    int trailing_space_count = 0;
-    bool havec;
+    size_t size = chunk_length + ts->field_buffer_pos + 1;
 
-    *p_error_type = 0;
-
-    havec = true;
-    c = stream_fetch(s);
-    /* Skip comments or empty lines until a line with content comes */
-    while (ISCOMMENT(c, s, cc0, cc1)) {
-        stream_skipline(s);
-        c = stream_fetch(s);
+    if (NPY_UNLIKELY(ts->field_buffer_length < size)) {
+        size = next_size(size);
+        char32_t *new = PyMem_Realloc(ts->field_buffer, size * sizeof(char32_t));
+        if (new == NULL) {
+            PyErr_NoMemory();
+            return -1;
+        }
+        ts->field_buffer_length = size;
+        ts->field_buffer = new;
     }
 
-    if (c == STREAM_EOF) {
-        *p_error_type = ERROR_NO_DATA;
-        return NULL;
+    if (!started_saving_word) {
+        *word_start = ts->field_buffer_pos;
+        *word_length = 0;
     }
 
-    /* state when a new field begins: */
-    int initial_state = TOKENIZE_INIT;
-    if (sep_char == '\0') {
-        sep_char = ' ';
-        initial_state = TOKENIZE_WHITESPACE;
+    memcpy(ts->field_buffer + ts->field_buffer_pos, chunk_start,
+           chunk_length * sizeof(char32_t));
+    ts->field_buffer_pos += chunk_length;
+    *word_length += chunk_length;
+    /* always ensure we end with NUL */
+    ts->field_buffer[ts->field_buffer_pos] = '\0';
+    return 0;
+}
+
+
+int
+add_field(tokenizer_state *ts,
+        size_t word_start, size_t word_length, bool is_quoted)
+{
+    ts->field_buffer_pos += 1;  /* The field is done, so advance for next one */
+    size_t size = ts->num_fields + 1;
+    if (NPY_UNLIKELY(size > ts->fields_size)) {
+        size = next_size(size);
+        field_info *fields = PyMem_Realloc(ts->fields, size * sizeof(*fields));
+        if (fields == NULL) {
+            PyErr_NoMemory();
+            return -1;
+        }
+        ts->fields = fields;
+        ts->fields_size = size;
     }
-    /* state at beginning of line: */
-    int state = initial_state;
-    field_number = 0;
-    p_word_start = word_buffer;
-    p_word_end = p_word_start;
 
-    while (true) {
-        if ((p_word_end - word_buffer) >= word_buffer_size) {
-            *p_error_type = ERROR_TOO_MANY_CHARS;
-            break;
-        }
-        if (field_number >= MAX_NUM_COLUMNS) {
-            *p_error_type = ERROR_TOO_MANY_FIELDS;
-            break;
-        }
-        if (!havec) {
-            c = stream_fetch(s);
-        }
-        else {
-            havec = false;
+    ts->fields[ts->num_fields].offset = word_start;
+    ts->fields[ts->num_fields].length = word_length;
+    ts->fields[ts->num_fields].quoted = is_quoted;
+    ts->num_fields += 1;
+    return 0;
+}
+
+
+/*
+ * This version now always copies the full "row" (all tokens).  This makes
+ * two things easier:
+ * 1. It means that every word is guaranteed to be followed by a NUL character
+ *    (although it can include one as well).
+ * 2. In the usecols case we can sniff the first row easier by parsing it
+ *    fully.
+ *
+ * The tokenizer could grow the ability to skip fields and check the
+ * maximum number of fields when known.
+ *
+ * Unlike other tokenizers, this one tries to work in chunks and copies
+ * data to words only when it it has to.  The hope is that this makes multiple
+ * light-weight loops rather than a single heavy one, to allow e.g. quickly
+ * scanning for the end of a field.
+ */
+int
+tokenize(stream *s, tokenizer_state *ts, parser_config *const config)
+{
+    char32_t *chunk_start = NULL;
+    char32_t *chunk_end;
+
+    size_t word_start;
+    size_t word_length;
+
+    /* Reset to start of buffer */
+    ts->field_buffer_pos = 0;
+
+    char32_t *pos = ts->pos;
+
+    ts->num_fields = 0;
+    bool is_quoted = false;
+    bool started_saving_word = false;
+
+    int res = 0;
+
+    while (1) {
+        if (NPY_UNLIKELY(pos >= ts->end)) {
+            /* fetch new data */
+            ts->buf_state = stream_nextbuf(s, &ts->pos, &ts->end);
+            if (ts->buf_state < 0) {
+                return -1;
+            }
+            else if (ts->pos == ts->end) {
+                if (ts->buf_state != BUFFER_IS_FILEEND) {
+                    PyErr_SetString(PyExc_RuntimeError,
+                            "Reader returned an empty buffer, "
+                            "but file did not end.");
+                    return -1;
+                }
+                if (ts->state & TOKENIZE_OUTSIDE_FIELD) {
+                    res = 1;
+                    goto finish;
+                }
+                /* We probably still need to append the last field */
+                ts->state = TOKENIZE_FINALIZE_FILE;
+            }
+            pos = ts->pos;
         }
 
-        if (state == TOKENIZE_WHITESPACE) {
-            if (c == ' ') {
-                continue;
-            }
-            else {
-                state = TOKENIZE_INIT;
-            }
-        }
+        switch (ts->state) {
+            case TOKENIZE_UNQUOTED:
+                chunk_start = pos;
+                for (; pos < ts->end; pos++) {
+                    if (*pos == '\r' || *pos == '\n') {
+                        ts->state = TOKENIZE_EAT_CRLF;
+                        break;
+                    }
+                    else if (*pos == config->delimiter) {
+                        ts->state = TOKENIZE_INIT;
+                        break;
+                    }
+                    else if (*pos == config->comment[0]) {
+                        if (config->comment[1] != '\0') {
+                            ts->state = TOKENIZE_CHECK_COMMENT;
+                            break;
+                        }
+                        else {
+                            ts->state = TOKENIZE_FINALIZE_LINE;
+                            break;
+                        }
+                    }
+                }
+                chunk_end = pos;
+                pos++;
+                break;
 
-        if (state == TOKENIZE_INIT || state == TOKENIZE_UNQUOTED) {
-            if (state == TOKENIZE_INIT && c == quote_char) {
-                // Opening quote. Switch state to TOKENIZE_QUOTED.
-                state = TOKENIZE_QUOTED;
-            }
-            else if (state == TOKENIZE_INIT && ignore_leading_spaces && c == ' ') {
-                // Ignore this leading space.
-            }
-            else if ((c == sep_char) ||  ISCOMMENT(c, s, cc0, cc1) || (c == '\n') || (c == STREAM_EOF)) {
-                if (ISCOMMENT(c, s, cc0, cc1)) {
-                    stream_skipline(s);  /* Finished line: forward stream */
+            case TOKENIZE_QUOTED:
+                chunk_start = pos;
+                for (; pos < ts->end; pos++) {
+                    if (!config->allow_embedded_newline && (
+                                *pos == '\r' || *pos == '\n')) {
+                        ts->state = TOKENIZE_EAT_CRLF;
+                        break;
+                    }
+                    else if (*pos != config->quote) {
+                        /* inside the field, nothing to do. */
+                    }
+                    else {
+                        ts->state = TOKENIZE_QUOTED_CHECK_DOUBLE_QUOTE;
+                        break;
+                    }
                 }
-                // End of a field.  Save the field, and switch to `initial_state`.
-                if (ignore_trailing_spaces && trailing_space_count > 0) {
-                    p_word_end -= trailing_space_count;
+                chunk_end = pos;
+                pos++;
+                break;
+
+            case TOKENIZE_WHITESPACE:
+                for (; pos < ts->end; pos++) {
+                    if (*pos != ' ') {
+                        ts->state = TOKENIZE_INIT;
+                        break;
+                    }
                 }
-                *p_word_end = '\0';
-                words[field_number] = p_word_start;
-                ++field_number;
-                ++p_word_end;
-                p_word_start = p_word_end;
-                if (c != sep_char) {
-                    /* Everything not the sep_char ends the line */
-                    break;
+                break;
+
+            case TOKENIZE_INIT:
+                /*
+                 * Beginning of a new field.
+                 */
+                if (config->ignore_leading_spaces) {
+                    while (pos < ts->end && *pos == ' ') {
+                        pos++;
+                    }
+                    if (pos == ts->end) {
+                        break;
+                    }
                 }
-                trailing_space_count = 0;
-                state = initial_state;
-            }
-            else {
-                *p_word_end = c;
-                ++p_word_end;
-                if (c == ' ') {
-                    ++trailing_space_count;
+                /* Setting chunk effectively starts the field */
+                if (*pos == config->quote) {
+                    is_quoted = true;
+                    ts->state = TOKENIZE_QUOTED;
+                    pos++;
                 }
                 else {
-                    trailing_space_count = 0;
+                    is_quoted = false;
+                    ts->state = TOKENIZE_UNQUOTED;
                 }
-                state = TOKENIZE_UNQUOTED;
-            } 
-        }
-        else if (state == TOKENIZE_QUOTED) {
-            if ((c != quote_char && c != '\n' && c != STREAM_EOF) || (c == '\n' && allow_embedded_newline)) {
-                *p_word_end = c;
-                ++p_word_end;
-            }
-            else if (c == quote_char && stream_peek(s)==quote_char) {
-                // Repeated quote characters; treat the pair as a single quote char.
-                *p_word_end = c;
-                ++p_word_end;
-                // Skip the second double-quote.
-                stream_fetch(s);
-            }
-            else if (c == quote_char) {
-                // Closing quote.  Switch state to TOKENIZE_UNQUOTED.
-                state = TOKENIZE_UNQUOTED;
-                trailing_space_count = 0;
-            }
-            else {
-                // c must be '\n' or STREAM_EOF.
-                // If we are here, it means we've reached the end of the file
-                // while inside quotes, or the end of the line while inside
-                // quotes and 'allow_embedded_newline' is 0.
-                // This could be treated as an error, but for now, we'll simply
-                // end the field (and the row).
-                *p_word_end = '\0';
-                words[field_number] = p_word_start;
-                ++field_number;
-                ++p_word_end;
-                p_word_start = p_word_end;
                 break;
+
+            case TOKENIZE_CHECK_COMMENT:
+                if (*pos == config->comment[1]) {
+                    ts->state = TOKENIZE_FINALIZE_LINE;
+                    pos++;
+                }
+                else {
+                    /* Not a comment, must be tokenizing unquoted now */
+                    ts->state = TOKENIZE_UNQUOTED;
+                    /* Copy comment as a chunk to the current field */
+                    chunk_start = config->comment;
+                    chunk_end = chunk_start + 1;
+                }
+                break;
+
+            case TOKENIZE_QUOTED_CHECK_DOUBLE_QUOTE:
+                if (*pos == config->quote) {
+                    ts->state = TOKENIZE_QUOTED;
+                    pos++;
+                }
+                else {
+                    /* continue parsing as if unquoted */
+                    ts->state = TOKENIZE_UNQUOTED;
+                }
+                break;
+
+            case TOKENIZE_FINALIZE_LINE:
+                if (ts->buf_state != BUFFER_MAY_CONTAIN_NEWLINE) {
+                    ts->state = TOKENIZE_INIT;
+                    ts->pos = ts->end;  /* advance to next buffer */
+                    goto finish;
+                }
+                for (; pos < ts->end; pos++) {
+                    if (*pos == '\r' || *pos == '\n') {
+                        ts->state = TOKENIZE_EAT_CRLF;
+                        break;
+                    }
+                }
+                break;
+
+            case TOKENIZE_EAT_CRLF:
+                /*
+                 * "Universal newline" support any two-character combination
+                 * of `\n` and `\r`.
+                 * TODO: Should probably only trigger for \r\n?
+                 */
+                ts->state = TOKENIZE_INIT;
+                if (*pos == '\n' || *pos == '\r') {
+                    pos++;
+                }
+
+                ts->pos = pos;
+                goto finish;
+
+            case TOKENIZE_FINALIZE_FILE:
+                break;  /* don't do anything,just need to copy back */
+
+            default:
+                assert(0);
+        }
+
+        /* Copy whatever chunk we currently have */
+        if (chunk_start != NULL) {
+            if (copy_to_field_buffer(ts,
+                    chunk_start, chunk_end, started_saving_word,
+                    &word_start, &word_length) < 0) {
+                return -1;
             }
+            started_saving_word = true;
+            chunk_start = NULL;
+        }
+
+        if (started_saving_word && (ts->state & TOKENIZE_OUTSIDE_FIELD)) {
+            /* A field was fully copied, finalize it */
+            if (add_field(ts, word_start, word_length, is_quoted) < 0) {
+                return -1;
+            }
+            started_saving_word = false;
         }
     }
 
-    if (*p_error_type) {
-        return NULL;
+  finish:
+    if (ts->num_fields == 1 && ts->fields[0].length == 0) {
+        ts->num_fields--;
     }
+    return res;
+}
 
-    if (field_number == 0) {
-        /* XXX Is this the appropriate error type? */
-        *p_error_type = ERROR_NO_DATA;
-        return NULL;
-    }
 
-    *p_num_fields = field_number;
-    result = (char32_t **) malloc(sizeof(char32_t *) * field_number);
-    if (result == NULL) {
-        *p_error_type = ERROR_OUT_OF_MEMORY;
-        return NULL;
-    }
+void
+tokenizer_clear(tokenizer_state *ts)
+{
+    PyMem_FREE(ts->field_buffer);
+    ts->field_buffer = NULL;
+    ts->field_buffer_length = 0;
 
-    for (n = 0; n < field_number; ++n) {
-        result[n] = words[n];
-    }
+    PyMem_FREE(ts->fields);
+    ts->fields = NULL;
+    ts->fields_size = 0;
+}
 
-    return result;
+
+void
+tokenizer_init(tokenizer_state *ts, parser_config *config)
+{
+    ts->state = TOKENIZE_INIT;
+    ts->num_fields = 0;
+
+    ts->buf_state = 0;
+    ts->pos = NULL;
+    ts->end = NULL;
+
+    ts->field_buffer = NULL;
+    ts->field_buffer_length = 0;
+
+    ts->fields = NULL;
+    ts->fields_size = 0;
 }

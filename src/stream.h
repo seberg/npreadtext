@@ -30,8 +30,8 @@ typedef struct _stream {
 } stream;
 
 
-#define stream_nextbuf(s, end)  \
-        ((s)->stream_getbuf((s)->stream_data), start, end)
+#define stream_nextbuf(s, start, end)  \
+        ((s)->stream_nextbuf((s)->stream_data, start, end))
 #define stream_seek(s, pos)         ((s)->stream_seek((s)->stream_data, (pos)))
 #define stream_close(s, restore)    ((s)->stream_close((s), (restore)))
 
