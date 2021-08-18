@@ -77,12 +77,13 @@ copy_to_field_buffer(tokenizer_state *ts,
         *word_length = 0;
     }
 
-    memcpy(ts->field_buffer + ts->field_buffer_pos, chunk_start,
-           chunk_length * sizeof(char32_t));
+    char32_t *write_pos = ts->field_buffer + ts->field_buffer_pos;
+    for (; chunk_start < chunk_end; chunk_start++, write_pos++) {
+        *write_pos = *chunk_start;
+    }
+    *write_pos = '\0';  /* always ensure we end with NUL */
     ts->field_buffer_pos += chunk_length;
     *word_length += chunk_length;
-    /* always ensure we end with NUL */
-    ts->field_buffer[ts->field_buffer_pos] = '\0';
     return 0;
 }
 
