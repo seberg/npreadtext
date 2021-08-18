@@ -49,8 +49,8 @@ typedef struct _python_file_by_line {
     /* Python str object holding the line most recently read from the file. */
     PyObject *line;
 
-    bool copied;
-    char32_t *buffer;
+    int kind;
+    char *buffer;
 
     /* Length of line */
     Py_ssize_t linelen;
@@ -86,13 +86,9 @@ typedef struct _python_file_by_line {
 static int
 _fb_load(python_file_by_line *fb)
 {
-    if (fb->copied) {
-        PyMem_FREE(fb->buffer);
-        fb->copied = false;
-        fb->buffer = NULL;
-    }
     Py_XDECREF(fb->line);
     fb->line = NULL;
+    fb->buffer = NULL;
 
     PyObject *line = PyObject_CallFunctionObjArgs(fb->readline, NULL);
     fb->line = line;
@@ -119,18 +115,19 @@ _fb_load(python_file_by_line *fb)
         Py_SETREF(fb->line, uline);
     }
 
-    fb->linelen = PyUnicode_GET_LENGTH(fb->line);
+    fb->linelen = PyUnicode_GetLength(fb->line);
 
-    if (PyUnicode_KIND(fb->line) == PyUnicode_4BYTE_KIND) {
-        fb->buffer = PyUnicode_4BYTE_DATA(fb->line);
+    fb->kind = PyUnicode_KIND(fb->line);
+    if (fb->kind == PyUnicode_1BYTE_KIND) {
+        fb->buffer = (char *)PyUnicode_1BYTE_DATA(fb->line);
     }
-    else {
-        /*
-         * NOTE: this is not ideal, we could also try to support other unicode
-         *       widths, or copy into a buffer we own for slightly better speed
-         */
-        fb->copied = true;
-        fb->buffer = PyUnicode_AsUCS4Copy(fb->line);
+    else if (fb->kind == PyUnicode_2BYTE_KIND) {
+        fb->buffer = (char *)PyUnicode_2BYTE_DATA(fb->line);
+        fb->linelen *= sizeof(Py_UCS2);
+    }
+    else if (fb->kind == PyUnicode_4BYTE_KIND) {
+        fb->buffer = (char *)PyUnicode_4BYTE_DATA(fb->line);
+        fb->linelen *= sizeof(Py_UCS4);
     }
 
     if (fb->linelen == 0) {
@@ -141,12 +138,13 @@ _fb_load(python_file_by_line *fb)
 
 
 static int
-fb_nextbuf(python_file_by_line *fb, char32_t **start, char32_t **end)
+fb_nextbuf(python_file_by_line *fb, char **start, char **end, int *kind)
 {
     int status = _fb_load(fb);
 
     *start = fb->buffer;
     *end = fb->buffer + fb->linelen;
+    *kind = fb->kind;
     return status;
 }
 
@@ -197,10 +195,6 @@ stream_del(stream *strm, int restore)
     Py_XDECREF(fb->tell);
     Py_XDECREF(fb->line);
 
-    if (fb->copied) {
-        PyMem_FREE(fb->buffer);
-    }
-
     free(fb);
     free(strm);
 
@@ -224,7 +218,6 @@ stream_python_file_by_line(PyObject *obj, PyObject *encoding)
     }
 
     fb->buffer = NULL;
-    fb->copied = false;
 
     fb->file = NULL;
     fb->readline = NULL;

@@ -31,11 +31,12 @@ typedef struct {
 
 typedef struct {
     int state;
+    int unicode_kind;
     int buf_state;
     size_t num_fields;
     /* the buffer we are currently working on */
-    char32_t *pos;
-    char32_t *end;
+    char *pos;
+    char *end;
     /*
      * In some cases, we need to copy words.  We will use this length
      * and state.  The word buffer only grows (we assume this is OK).
