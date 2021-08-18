@@ -19,7 +19,6 @@
 
 #include "stream.h"
 #include "tokenize.h"
-#include "sizes.h"
 #include "char32utils.h"
 #include "conversions.h"
 #include "field_types.h"

@@ -7,7 +7,6 @@
 #include <stdbool.h>
 
 #include "typedefs.h"
-#include "sizes.h"
 #include "char32utils.h"
 
 double

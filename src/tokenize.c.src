@@ -9,7 +9,6 @@
 #include "typedefs.h"
 #include "stream.h"
 
-#include "sizes.h"
 #include "tokenize.h"
 #include "error_types.h"
 #include "parser_config.h"

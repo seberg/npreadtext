@@ -8,7 +8,6 @@
 
 #include "typedefs.h"
 #include "tokenize.h"
-#include "sizes.h"
 #include "field_types.h"
 #include "analyze.h"
 #include "type_inference.h"
