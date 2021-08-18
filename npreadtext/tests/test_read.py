@@ -240,6 +240,14 @@ def test_converters_and_usecols():
     assert_equal(a, [[1.5, 3.5], [3.0, np.nan], [5.5, 7.5]])
 
 
+@pytest.mark.parametrize("c1", ["a", "の", "🫕"])
+@pytest.mark.parametrize("c2", ["a", "の", "🫕"])
+def test_large_unicode_characters(c1, c2):
+    # c1 and c2 span ascii, 16bit and 32bit range.
+    txt = StringIO(f"a,{c1},c,d\ne,{c2},f,g")
+    a = read(txt, dtype=np.dtype('U12'))
+    assert_equal(a, [f"a,{c1},c,d".split(","), f"e,{c2},f,g".split(",")])
+
 def test_unicode_with_converter():
     txt = StringIO('cat,dog\nαβγ,δεζ\nabc,def\n')
     conv = {0: lambda s: s.upper()}
@@ -255,6 +263,14 @@ def test_converter_with_structured_dtype():
     expected = np.array([(15, 2.5, 'ABC'), (30, 4.0, 'DEF'), (55, 6.0, 'GHI')],
                         dtype=dt)
     assert_equal(a, expected)
+
+
+def test_read_huge_row():
+    row = '1.5,2.5,' * 50000
+    row = row[:-1] + "\n"
+    txt = StringIO(row * 2)
+    a = read(txt, delimiter=",", dtype=float)
+    assert_equal(a, np.tile([1.5, 2.5], (2, 50000)))
 
 
 @pytest.mark.parametrize('dtype, actual_dtype', [('S', np.dtype('S5')),
