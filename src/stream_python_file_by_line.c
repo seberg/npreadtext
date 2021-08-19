@@ -115,7 +115,7 @@ _fb_load(python_file_by_line *fb)
         Py_SETREF(fb->line, uline);
     }
 
-    fb->linelen = PyUnicode_GetLength(fb->line);
+    fb->linelen = PyUnicode_GET_LENGTH(fb->line);
 
     fb->kind = PyUnicode_KIND(fb->line);
     if (fb->kind == PyUnicode_1BYTE_KIND) {

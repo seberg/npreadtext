@@ -54,13 +54,10 @@ next_size(size_t size) {
  */
 static int
 copy_to_field_buffer_@type@(tokenizer_state *ts,
-        const @type@ *chunk_start, const @type@ *chunk_end,
-        bool started_saving_word,
-        size_t *word_start, size_t *word_length)
+        const @type@ *chunk_start, const @type@ *chunk_end)
 {
     size_t chunk_length = chunk_end - chunk_start;
-
-    size_t size = chunk_length + ts->field_buffer_pos + 1;
+    size_t size = chunk_length + ts->field_buffer_pos + 2;
 
     if (NPY_UNLIKELY(ts->field_buffer_length < size)) {
         size = next_size(size);
@@ -73,28 +70,23 @@ copy_to_field_buffer_@type@(tokenizer_state *ts,
         ts->field_buffer = grown;
     }
 
-    if (!started_saving_word) {
-        *word_start = ts->field_buffer_pos;
-        *word_length = 0;
-    }
-
     char32_t *write_pos = ts->field_buffer + ts->field_buffer_pos;
     for (; chunk_start < chunk_end; chunk_start++, write_pos++) {
         *write_pos = (char32_t)*chunk_start;
     }
     *write_pos = 0;  /* always ensure we end with NUL */
     ts->field_buffer_pos += chunk_length;
-    *word_length += chunk_length;
     return 0;
 }
 /**end repeat**/
 
 
 static int
-add_field(tokenizer_state *ts,
-        size_t word_start, size_t word_length, bool is_quoted)
+add_field(tokenizer_state *ts)
 {
-    ts->field_buffer_pos += 1;  /* The field is done, so advance for next one */
+    /* The previous field is done, advance to keep a NUL byte at the end */
+    ts->field_buffer_pos += 1;
+
     size_t size = ts->num_fields + 1;
     if (NPY_UNLIKELY(size > ts->fields_size)) {
         size = next_size(size);
@@ -107,10 +99,11 @@ add_field(tokenizer_state *ts,
         ts->fields_size = size;
     }
 
-    ts->fields[ts->num_fields].offset = word_start;
-    ts->fields[ts->num_fields].length = word_length;
-    ts->fields[ts->num_fields].quoted = is_quoted;
+    ts->fields[ts->num_fields].offset = ts->field_buffer_pos;
+    ts->fields[ts->num_fields].quoted = false;
     ts->num_fields += 1;
+    /* Ensure this (currently empty) word is NUL terminated. */
+    ts->field_buffer[ts->field_buffer_pos] = '\0';
     return 0;
 }
 
@@ -134,26 +127,31 @@ add_field(tokenizer_state *ts,
 int
 tokenize(stream *s, tokenizer_state *ts, parser_config *const config)
 {
+    assert(ts->fields_size >= 2);
+    assert(ts->field_buffer_length >= 2*sizeof(char32_t));
+
     void *chunk_start = NULL;
     void *chunk_end;
 
-    size_t word_start;
-    size_t word_length;
+    int finished_reading_file = 0;
 
     /* Reset to start of buffer */
     ts->field_buffer_pos = 0;
-
     ts->num_fields = 0;
-    bool is_quoted = false;
-    bool started_saving_word = false;
-
-    int finished_reading_file = 0;
+    /* Add the first field */
 
     while (1) {
+        if (ts->state == TOKENIZE_INIT) {
+            /* Start a new field */
+            if (add_field(ts) < 0) {
+                return -1;
+            }
+            ts->state = TOKENIZE_CHECK_QUOTED;
+        }
+
         if (NPY_UNLIKELY(ts->pos >= ts->end)) {
             if (ts->buf_state == BUFFER_IS_LINEND &&
-                    (ts->state == TOKENIZE_LINE_END
-                     || ts->state == TOKENIZE_EAT_CRLF)) {
+                    ts->state == TOKENIZE_EAT_CRLF) {
                 /* Finished line, do not read anymore (also do not eat \n) */
                 goto finish;
             }
@@ -164,13 +162,9 @@ tokenize(stream *s, tokenizer_state *ts, parser_config *const config)
                 return -1;
             }
             if (ts->buf_state == BUFFER_IS_FILEEND) {
+                finished_reading_file = 1;
                 ts->pos = ts->end;  /* should be guaranteed, but make sure. */
-                if (ts->state & TOKENIZE_OUTSIDE_FIELD) {
-                    finished_reading_file = 1;
-                    goto finish;
-                }
-                /* We probably still need to append the last field */
-                ts->state = TOKENIZE_LINE_END;
+                goto finish;
             }
             else if (ts->pos == ts->end) {
                 if (ts->buf_state != BUFFER_IS_LINEND) {
@@ -179,26 +173,22 @@ tokenize(stream *s, tokenizer_state *ts, parser_config *const config)
                             "but did not indicate file or line end.");
                     return -1;
                 }
+                /* Otherwise, we are OK with this and assume an empty line. */
                 goto finish;
             }
         }
-
         switch (ts->unicode_kind) {
         /**begin repeat
          * #kind = PyUnicode_1BYTE_KIND, PyUnicode_2BYTE_KIND, PyUnicode_4BYTE_KIND#
          * #type = Py_UCS1, Py_UCS2, Py_UCS4#
          */
-            case @kind@:
-            {
+        case @kind@:
+        {
             @type@ *pos = (@type@ *)ts->pos;
             @type@ *stop = (@type@ *)ts->end;
 
-            if (ts->state == TOKENIZE_INIT) {
-                /*
-                 * Beginning of a new field, doing it outside the loops allows
-                 * to fall into the parsing.  Note that both field tokenizers
-                 * handle an empty field just fine.
-                 */
+            if (ts->state == TOKENIZE_CHECK_QUOTED) {
+                /* before we can check for quotes, strip leading spaces */
                 if (config->ignore_leading_spaces) {
                     while (pos < stop && *pos == ' ') {
                         pos++;
@@ -208,14 +198,14 @@ tokenize(stream *s, tokenizer_state *ts, parser_config *const config)
                         break;
                     }
                 }
+
                 /* Setting chunk effectively starts the field */
                 if (*pos == config->quote) {
-                    is_quoted = true;
+                    ts->fields[ts->num_fields - 1].quoted = true;
                     ts->state = TOKENIZE_QUOTED;
-                    pos++;
+                    pos++;  /* TOKENIZE_QUOTED is OK with pos == stop */
                 }
                 else {
-                    is_quoted = false;
                     ts->state = TOKENIZE_UNQUOTED;
                 }
             }
@@ -323,10 +313,6 @@ tokenize(stream *s, tokenizer_state *ts, parser_config *const config)
                     ts->pos = (char *)pos;
                     goto finish;
 
-                case TOKENIZE_LINE_END:
-                    /* Nothing to do except storing the field */
-                    break;
-
                 default:
                     assert(0);
             }
@@ -336,46 +322,35 @@ tokenize(stream *s, tokenizer_state *ts, parser_config *const config)
             /* Copy whatever chunk we currently have */
             if (chunk_start != NULL) {
                 if (copy_to_field_buffer_@type@(ts,
-                        chunk_start, chunk_end, started_saving_word,
-                        &word_start, &word_length) < 0) {
+                        chunk_start, chunk_end) < 0) {
                     return -1;
                 }
-                started_saving_word = true;
                 chunk_start = NULL;
             }
+            break;
         }
-        break;
-        /**end repeat**/
-        default:
-            assert(0);
+            /**end repeat**/
+            default:
+                assert(0);  /* should not happen, line end is transitional */
         }
 
-        if (started_saving_word && (ts->state & TOKENIZE_OUTSIDE_FIELD)) {
-            /* A field was fully copied, finalize it */
-            if (add_field(ts, word_start, word_length, is_quoted) < 0) {
-                return -1;
-            }
-            started_saving_word = false;
-            if (ts->state == TOKENIZE_LINE_END) {
-                goto finish;
-            }
+        if (ts->state == TOKENIZE_LINE_END) {
+            goto finish;
         }
     }
 
   finish:
-    /* NOTE: The fact that we have to append this field here is annoying... */
-    if (NPY_UNLIKELY(ts->state == TOKENIZE_INIT) && ts->num_fields != 0) {
-        /* There is a final empty field on this line */
-        static const Py_UCS1 c;  /* Use as fake data for simplicity. */
-        if (copy_to_field_buffer_Py_UCS1(ts,
-                &c, &c, false, &word_start, &word_length) < 0) {
-            return -1;
-        }
-        if (add_field(ts, word_start, word_length, is_quoted) < 0) {
-            return -1;
-        }
+    /* Finish the last field */
+    if (add_field(ts) < 0) {
+        return -1;
     }
-    else if (ts->num_fields == 1 && ts->fields[0].length == 0
+    ts->num_fields -= 1;
+    /*
+     * If have one field, but that field is completely empty, this is an
+     * empty line, and we just ignore it.
+     */
+    if (ts->num_fields == 1
+             && ts->fields[1].offset - ts->fields[0].offset == 1
              && !ts->fields->quoted) {
         ts->num_fields--;
     }
@@ -397,7 +372,7 @@ tokenizer_clear(tokenizer_state *ts)
 }
 
 
-void
+int
 tokenizer_init(tokenizer_state *ts, parser_config *config)
 {
     /* State and buf_state could be moved into tokenize if we go by row */
@@ -409,9 +384,18 @@ tokenizer_init(tokenizer_state *ts, parser_config *config)
     ts->pos = NULL;
     ts->end = NULL;
 
-    ts->field_buffer = NULL;
-    ts->field_buffer_length = 0;
+    ts->field_buffer = PyMem_Malloc(32 * sizeof(char32_t));
+    if (ts->field_buffer == NULL) {
+        PyErr_NoMemory();
+        return -1;
+    }
+    ts->field_buffer_length = 32;
 
-    ts->fields = NULL;
-    ts->fields_size = 0;
+    ts->fields = PyMem_Malloc(5 * sizeof(*ts->fields));
+    if (ts->fields == NULL) {
+        PyErr_NoMemory();
+        return -1;
+    }
+    ts->fields_size = 5;
+    return 0;
 }

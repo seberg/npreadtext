@@ -15,16 +15,16 @@
 #define TOKENIZE_LINE_END   (2 | TOKENIZE_OUTSIDE_FIELD)
 #define TOKENIZE_GOTO_LINE_END (3 | TOKENIZE_OUTSIDE_FIELD)
 /* inside fields */
-#define TOKENIZE_UNQUOTED   0
-#define TOKENIZE_QUOTED     1
-#define TOKENIZE_QUOTED_CHECK_DOUBLE_QUOTE 2
+#define TOKENIZE_CHECK_QUOTED 0
+#define TOKENIZE_UNQUOTED     1
+#define TOKENIZE_QUOTED       2
+#define TOKENIZE_QUOTED_CHECK_DOUBLE_QUOTE 3
 /* technically not necessarily inside a field, but it may be */
-#define TOKENIZE_CHECK_COMMENT 3
+#define TOKENIZE_CHECK_COMMENT 4
 
 
 typedef struct {
     size_t offset;
-    size_t length;
     bool quoted;
 } field_info;
 
@@ -38,16 +38,23 @@ typedef struct {
     char *pos;
     char *end;
     /*
-     * In some cases, we need to copy words.  We will use this length
-     * and state.  The word buffer only grows (we assume this is OK).
-     * TODO: If this turns out to be used regularly, it may make sense to
-     *       initialize this to a stack allocated version that is usually
-     *       big enough.
+     * Space to copy words into.  The buffer must always be at least two NUL
+     * entries longer (8 bytes) than the actual word (including initially).
+     * The first byte beyond the current word is always NUL'ed on write, the
+     * second byte is there to allow easy appending of an additional empty
+     * word at the end (this word is also NUL terminated).
      */
     size_t field_buffer_length;
     size_t field_buffer_pos;
     char32_t *field_buffer;
 
+    /*
+     * Fields, including information about the field being quoted.  This
+     * always includes one "additional" empty field.  The length of a field
+     * is equal to `fields[i+1].offset - fields[i].offset - 1`.
+     *
+     * The tokenizer assumes at least one field is allocated.
+     */
     field_info *fields;
     size_t fields_size;
 } tokenizer_state;
@@ -57,7 +64,7 @@ void
 tokenizer_clear(tokenizer_state *ts);
 
 
-void
+int
 tokenizer_init(tokenizer_state *ts, parser_config *config);
 
 int

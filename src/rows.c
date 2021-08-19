@@ -107,7 +107,7 @@ max_token_len(
         else {
             j = usecols[i];
         }
-        size_t m = fields[j].length;
+        size_t m = fields[j+1].offset - fields[j].offset - 1;
         if (m > maxlen) {
             maxlen = m;
         }
@@ -267,7 +267,9 @@ read_rows(stream *s,
 
     int ts_result = 0;
     tokenizer_state ts;
-    tokenizer_init(&ts, pconfig);
+    if (tokenizer_init(&ts, pconfig) < 0) {
+        return -1;
+    }
 
     int actual_num_fields = -1;
 

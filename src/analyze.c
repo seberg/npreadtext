@@ -87,7 +87,9 @@ analyze(stream *s, parser_config *pconfig, int skiplines, int numrows,
 
     int ts_result = 0;
     tokenizer_state ts;
-    tokenizer_init(&ts, pconfig);
+    if (tokenizer_init(&ts, pconfig) < 0) {
+        return -1;
+    }
 
     field_type *types = NULL;
     integer_range *ranges = NULL;
@@ -159,8 +161,9 @@ analyze(stream *s, parser_config *pconfig, int skiplines, int numrows,
             if (typecode != '*') {
                 types[k].typecode = typecode;
             }
-            if (fields[k].length > types[k].itemsize) {
-                types[k].itemsize = fields[k].length;
+            size_t length = fields[k+1].offset - fields[k].offset - 1;
+            if (length > types[k].itemsize) {
+                types[k].itemsize = length;
             }
         }
         ++row_count;
