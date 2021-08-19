@@ -90,7 +90,7 @@ copy_to_field_buffer_@type@(tokenizer_state *ts,
 /**end repeat**/
 
 
-int
+static int
 add_field(tokenizer_state *ts,
         size_t word_start, size_t word_length, bool is_quoted)
 {
