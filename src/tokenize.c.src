@@ -74,14 +74,14 @@ copy_to_field_buffer_@type@(tokenizer_state *ts,
     for (; chunk_start < chunk_end; chunk_start++, write_pos++) {
         *write_pos = (char32_t)*chunk_start;
     }
-    *write_pos = 0;  /* always ensure we end with NUL */
+    *write_pos = '\0';  /* always ensure we end with NUL */
     ts->field_buffer_pos += chunk_length;
     return 0;
 }
 /**end repeat**/
 
 
-static int
+static NPY_INLINE int
 add_field(tokenizer_state *ts)
 {
     /* The previous field is done, advance to keep a NUL byte at the end */
@@ -129,9 +129,6 @@ tokenize(stream *s, tokenizer_state *ts, parser_config *const config)
 {
     assert(ts->fields_size >= 2);
     assert(ts->field_buffer_length >= 2*sizeof(char32_t));
-
-    void *chunk_start = NULL;
-    void *chunk_end;
 
     int finished_reading_file = 0;
 
@@ -186,6 +183,7 @@ tokenize(stream *s, tokenizer_state *ts, parser_config *const config)
         {
             @type@ *pos = (@type@ *)ts->pos;
             @type@ *stop = (@type@ *)ts->end;
+            @type@ *chunk_start;
 
             if (ts->state == TOKENIZE_CHECK_QUOTED) {
                 /* before we can check for quotes, strip leading spaces */
@@ -237,7 +235,9 @@ tokenize(stream *s, tokenizer_state *ts, parser_config *const config)
                             }
                         }
                     }
-                    chunk_end = pos;
+                    if (copy_to_field_buffer_@type@(ts, chunk_start, pos) < 0) {
+                        return -1;
+                    }
                     pos++;
                     break;
 
@@ -262,7 +262,9 @@ tokenize(stream *s, tokenizer_state *ts, parser_config *const config)
                             break;
                         }
                     }
-                    chunk_end = pos;
+                    if (copy_to_field_buffer_@type@(ts, chunk_start, pos) < 0) {
+                        return -1;
+                    }
                     pos++;
                     break;
 
@@ -275,8 +277,10 @@ tokenize(stream *s, tokenizer_state *ts, parser_config *const config)
                         /* Not a comment, must be tokenizing unquoted now */
                         ts->state = TOKENIZE_UNQUOTED;
                         /* Copy comment as a chunk to the current field */
-                        chunk_start = config->comment;
-                        chunk_end = chunk_start + 1;
+                        if (copy_to_field_buffer_Py_UCS4(ts,
+                                config->comment, config->comment+1) < 0) {
+                            return -1;
+                        }
                     }
                     break;
 
@@ -318,15 +322,6 @@ tokenize(stream *s, tokenizer_state *ts, parser_config *const config)
             }
 
             ts->pos = (char *)pos;
-
-            /* Copy whatever chunk we currently have */
-            if (chunk_start != NULL) {
-                if (copy_to_field_buffer_@type@(ts,
-                        chunk_start, chunk_end) < 0) {
-                    return -1;
-                }
-                chunk_start = NULL;
-            }
             break;
         }
             /**end repeat**/
