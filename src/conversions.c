@@ -288,6 +288,17 @@ call_converter_function(PyObject *func, const char32_t *str, size_t length)
 }
 
 
+/*
+ * Defines liberated from NumPy's, only used for the PyArray_Pack hack!
+ * TODO: Remove!
+ */
+#if PY_VERSION_HEX < 0x030900a4
+    /* Introduced in https://github.com/python/cpython/commit/d2ec81a8c99796b51fb8c49b77a7fe369863226f */
+    #define Py_SET_TYPE(obj, type) ((Py_TYPE(obj) = (type)), (void)0)
+    /* Introduced in https://github.com/python/cpython/commit/c86a11221df7e37da389f9c6ce6e47ea22dc44ff */
+    #define Py_SET_REFCNT(obj, refcnt) ((Py_REFCNT(obj) = (refcnt)), (void)0)
+#endif
+
 int
 to_generic(PyArray_Descr *descr,
         const char32_t *str, const char32_t *end, char *dataptr, PyObject *func)
