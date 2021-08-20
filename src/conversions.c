@@ -226,7 +226,8 @@ to_cdouble(PyArray_Descr *descr,
  */
 int
 to_string(PyArray_Descr *descr,
-        const char32_t *str, const char32_t *end, char *dataptr, void *unused)
+        const char32_t *str, const char32_t *end, char *dataptr,
+        parser_config *unused)
 {
     const char32_t* c = str;
     size_t length = descr->elsize;
@@ -247,7 +248,8 @@ to_string(PyArray_Descr *descr,
 
 int
 to_unicode(PyArray_Descr *descr,
-        const char32_t *str, const char32_t *end, char *dataptr, void *unused)
+        const char32_t *str, const char32_t *end, char *dataptr,
+        parser_config *unused)
 {
     size_t length = descr->elsize / 4;
 
@@ -300,8 +302,9 @@ call_converter_function(PyObject *func, const char32_t *str, size_t length)
 #endif
 
 int
-to_generic(PyArray_Descr *descr,
-        const char32_t *str, const char32_t *end, char *dataptr, PyObject *func)
+to_generic_with_converter(PyArray_Descr *descr,
+        const char32_t *str, const char32_t *end, char *dataptr,
+        parser_config *unused, PyObject *func)
 {
     /* Converts to unicode and calls custom converter (if set) */
     PyObject *converted = call_converter_function(
@@ -327,4 +330,13 @@ to_generic(PyArray_Descr *descr,
         return -1;
     }
     return 0;
+}
+
+
+int
+to_generic(PyArray_Descr *descr,
+        const char32_t *str, const char32_t *end, char *dataptr,
+        parser_config *config)
+{
+    return to_generic_with_converter(descr, str, end, dataptr, config, NULL);
 }

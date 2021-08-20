@@ -43,16 +43,21 @@ to_cdouble(PyArray_Descr *descr,
 int
 to_string(PyArray_Descr *descr,
         const char32_t *str, const char32_t *end, char *dataptr,
-        void *unused);
+        parser_config *unused);
 
 int
 to_unicode(PyArray_Descr *descr,
         const char32_t *str, const char32_t *end, char *dataptr,
-        void *unused);
+        parser_config *unused);
+
+int
+to_generic_with_converter(PyArray_Descr *descr,
+        const char32_t *str, const char32_t *end, char *dataptr,
+        parser_config *unused, PyObject *func);
 
 int
 to_generic(PyArray_Descr *descr,
         const char32_t *str, const char32_t *end, char *dataptr,
-        PyObject *func);
+        parser_config *pconfig);
 
 #endif

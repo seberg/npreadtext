@@ -309,11 +309,6 @@ read_rows(stream *s,
                 }
             }
 
-            if (field_types_prepare_parsing(
-                        num_field_types, field_types, pconfig) < 0) {
-                return NULL;
-            }
-
             if (converters != Py_None) {
                 conv_funcs = create_conv_funcs(converters, usecols, num_usecols,
                                                current_num_fields, read_error);
@@ -431,14 +426,13 @@ read_rows(stream *s,
             char32_t *end = ts.field_buffer + fields[k + 1].offset - 1;
             if (conv_funcs[j] == NULL) {
                 if (field_types[f].set_from_ucs4(field_types[f].descr,
-                        str, end, data_ptr, field_types[f].userdata) < 0) {
+                        str, end, data_ptr, pconfig) < 0) {
                     err = ERROR_BAD_FIELD;
                 }
             }
             else {
-                /* TODO: This dual-use of to_generic is maybe not great */
-                if (to_generic(field_types[f].descr,
-                        str, end, data_ptr, conv_funcs[j]) < 0) {
+                if (to_generic_with_converter(field_types[f].descr,
+                        str, end, data_ptr, pconfig, conv_funcs[j]) < 0) {
                     err = ERROR_BAD_FIELD;
                 }
             }

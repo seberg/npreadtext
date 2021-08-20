@@ -24,20 +24,18 @@
  *       (I think users should probably have to define the default, at which
  *       point it doesn't matter here.)
  *
- * NOTE: `userdata` is ill defined currently, we would need a mechanism to
- *       make it public.  Right now, it is the Python conversion function
- *       or a pointer to the floating point options.
- *       An alternative might be to instead add a translation step first.
+ * NOTE: We are currently passing the parser config, this could be made public
+ *       or could be set up to be dtype specific/private.  Always passing
+ *       pconfig fully seems easier right now.
  */
 typedef int (set_from_ucs4_function)(
         PyArray_Descr *descr, const char32_t *str, const char32_t *end,
-        char *dataptr, void *userdata);
+        char *dataptr, parser_config *pconfig);
 
 typedef struct _field_type {
     set_from_ucs4_function *set_from_ucs4;
     /* The original NumPy descriptor */
     PyArray_Descr *descr;
-    void *userdata;
 
     // itemsize:
     //   Size of field, in bytes.  In theory this would only be
@@ -63,9 +61,6 @@ field_types_clear(int num_field_types, field_type *ft);
 
 field_type *
 field_types_create(int num_field_types, PyArray_Descr *dtypes[]);
-
-int
-field_types_prepare_parsing(int num, field_type *ft, parser_config *pconfig);
 
 void
 field_types_fprintf(FILE *out, int num_field_types, const field_type *ft);
