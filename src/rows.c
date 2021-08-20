@@ -291,7 +291,7 @@ read_rows(stream *s,
 
         int j, k;
 
-        if (actual_num_fields == -1) {
+        if (NPY_UNLIKELY(actual_num_fields == -1)) {
             // We've deferred some of the initialization tasks to here,
             // because we've now read the first line, and we definitively
             // know how many fields (i.e. columns) we will be processing.
@@ -337,29 +337,6 @@ read_rows(stream *s,
                 return NULL;
             }
 
-            if (track_string_size) {
-                // typecode must be 'S' or 'U'.
-                // Find the maximum field length in the first line.
-                size_t maxlen;
-                if (converters != Py_None) {
-                    //maxlen = max_token_len_with_converters(result, actual_num_fields,
-                    //                                       usecols, num_usecols,
-                    //                                       conv_funcs);
-                    // XXX WIP--for now, ignore the converters...
-                    maxlen = max_token_len(fields, actual_num_fields,
-                                           usecols, num_usecols);
-                }
-                else {
-                    maxlen = max_token_len(fields, actual_num_fields,
-                                           usecols, num_usecols);
-                }
-
-                size_t new_itemsize;
-                new_itemsize = (field_types[0].typecode == 'S') ? maxlen : 4*maxlen;
-                field_types[0].itemsize = new_itemsize;
-                field_types[0].descr->elsize = new_itemsize;
-            }
-
             *num_cols = actual_num_fields;
             row_size = compute_row_size(actual_num_fields,
                                         num_field_types, field_types);
@@ -394,31 +371,29 @@ read_rows(stream *s,
                 data_ptr = data_array;
             }
         }
-        else {
-            // *Not* the first line...
-            if (track_string_size) {
-                size_t new_itemsize;
-                // typecode must be 'S' or 'U'.
-                // Find the maximum field length in the current line.
-                if (converters != Py_None) {
-                    // XXX Not handled yet.
-                }
-                size_t maxlen = max_token_len(fields, actual_num_fields,
-                                              usecols, num_usecols);
-                new_itemsize = (field_types[0].typecode == 'S') ? maxlen : 4*maxlen;
-                if (new_itemsize > field_types[0].itemsize) {
-                    // There is a field in this row whose length is
-                    // more than any previously seen length.
-                    if (use_blocks) {
-                        int status = blocks_uniform_resize(blks, actual_num_fields, new_itemsize);
-                        if (status != 0) {
-                            // XXX Handle this--probably out of memory.
-                        }
+
+        if (track_string_size) {
+            size_t new_itemsize;
+            // typecode must be 'S' or 'U'.
+            // Find the maximum field length in the current line.
+            if (converters != Py_None) {
+                // XXX Not handled yet.
+            }
+            size_t maxlen = max_token_len(fields, actual_num_fields,
+                    usecols, num_usecols);
+            new_itemsize = (field_types[0].typecode == 'S') ? maxlen : 4*maxlen;
+            if (new_itemsize > field_types[0].itemsize) {
+                // There is a field in this row whose length is
+                // more than any previously seen length.
+                if (use_blocks) {
+                    int status = blocks_uniform_resize(blks, actual_num_fields, new_itemsize);
+                    if (status != 0) {
+                        // XXX Handle this--probably out of memory.
                     }
-                    field_types[0].itemsize = new_itemsize;
-                    field_types[0].descr->elsize = new_itemsize;
                 }
-            }    
+                field_types[0].itemsize = new_itemsize;
+                field_types[0].descr->elsize = new_itemsize;
+            }
         }
 
         if (!usecols && (actual_num_fields != current_num_fields)) {
@@ -448,7 +423,7 @@ read_rows(stream *s,
                     // Python-like column indexing: k = -1 means the last column.
                     k += current_num_fields;
                 }
-                if ((k < 0) || (k >= current_num_fields)) {
+                if (NPY_UNLIKELY((k < 0) || (k >= current_num_fields))) {
                     read_error->error_type = ERROR_INVALID_COLUMN_INDEX;
                     read_error->line_number = row_count - 1;
                     read_error->column_index = usecols[j];
@@ -456,7 +431,7 @@ read_rows(stream *s,
                 }
             }
 
-            if (k >= current_num_fields) {
+            if (NPY_UNLIKELY(k >= current_num_fields)) {
                 PyErr_SetString(PyExc_NotImplementedError,
                         "internal error, k >= current_num_fields should not "
                         "be possible (and is note implemented)!");
@@ -481,7 +456,7 @@ read_rows(stream *s,
             }
             data_ptr += field_types[f].itemsize;
 
-            if (err) {
+            if (NPY_UNLIKELY(err)) {
                 read_error->error_type = err;
                 read_error->line_number = row_count - 1;
                 read_error->field_number = k;
