@@ -20,8 +20,8 @@ def _loadtxt(*args, **kwds):
 
     comment = kwds.pop('comments', None)
     if comment is None:
-        comment = ''
-    elif isinstance(comment, bytes):
+        comment = '#'
+    if isinstance(comment, bytes):
         comment = comment.decode('latin1')
 
     try:
