@@ -238,6 +238,16 @@ _readtext_from_stream(stream *s, char *filename, parser_config *pc,
                                   (ft[0].itemsize == 0) &&
                                   ((ft[0].typecode == 'S') ||
                                    (ft[0].typecode == 'U')));
+        if (track_string_size) {
+            /*
+             * The string size tracking currently mutates the descriptor,
+             * so we have to make a copy that we own (but can use it later)
+             */
+            ft[0].descr = PyArray_DescrNewFromType(ft[0].descr->type_num);
+            if (ft[0].descr == NULL) {
+                return NULL;
+            }
+        }
         void *result = read_rows(s, &num_rows, num_fields, ft, pc,
                                  cols, ncols, skiprows, converters,
                                  NULL, &num_cols, homogeneous, needs_init,
@@ -276,16 +286,9 @@ _readtext_from_stream(stream *s, char *filename, parser_config *pc,
             shape[1] = 1;  // Not actually necessary to fill this in.
         }
         if (track_string_size) {
-            // We need a new dtype for the string/unicode object, since
-            // the input dtype has length 0.
-            PyArray_Descr *dt;
-            if (ft[0].typecode == 'S') {
-                dt =  PyArray_DescrNewFromType(NPY_STRING);
-            }
-            else {
-                dt = PyArray_DescrNewFromType(NPY_UNICODE);
-            }
-            dt->elsize = ft[0].itemsize;
+            /* The reading modified `ft[0]` in-place, use it */
+            PyArray_Descr *dt = ft[0].descr;
+            Py_INCREF(dt);
             // XXX Fix memory management - `result` was malloc'd.
             arr = PyArray_NewFromDescr(&PyArray_Type, dt,
                                        ndim, shape, NULL, result, 0, NULL);
