@@ -460,12 +460,6 @@ read_rows(stream *s,
                 }
             }
 
-            read_error->error_type = ERROR_OK;
-            read_error->line_number = row_count - 1;
-            read_error->field_number = k;
-            read_error->char_position = -1; // FIXME
-            read_error->descr = field_types[f].descr;
-
             if (k >= current_num_fields) {
                 PyErr_SetString(PyExc_NotImplementedError,
                         "internal error, k >= current_num_fields should not "
@@ -473,25 +467,32 @@ read_rows(stream *s,
                 return NULL;
             }
 
+            int err = 0;
             char32_t *str = ts.field_buffer + fields[k].offset;
             char32_t *end = ts.field_buffer + fields[k + 1].offset - 1;
             if (conv_funcs[j] == NULL) {
                 if (field_types[f].set_from_ucs4(field_types[f].descr,
                         str, end, data_ptr, field_types[f].userdata) < 0) {
-                    read_error->error_type = ERROR_BAD_FIELD;
-                    break;
+                    err = ERROR_BAD_FIELD;
                 }
             }
             else {
                 /* TODO: This dual-use of to_generic is maybe not great */
                 if (to_generic(field_types[f].descr,
                         str, end, data_ptr, conv_funcs[j]) < 0) {
-                    read_error->error_type = ERROR_BAD_FIELD;
-                    break;
+                    err = ERROR_BAD_FIELD;
                 }
             }
-
             data_ptr += field_types[f].itemsize;
+
+            if (err) {
+                read_error->error_type = err;
+                read_error->line_number = row_count - 1;
+                read_error->field_number = k;
+                read_error->char_position = -1; // FIXME
+                read_error->descr = field_types[f].descr;
+                break;
+            }
         }
 
         if (read_error->error_type != 0) {
