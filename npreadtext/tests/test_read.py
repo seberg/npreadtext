@@ -190,13 +190,27 @@ def test_unpack_array():
     assert_array_equal(c, np.array([3.0, 6.0, 9.0, 2.0]))
 
 
-def test_blank_lines():
-    txt = StringIO('1 2 30\n\n4 5 60\n     \n7 8 90')
-    a = read(txt, delimiter=' ')
+def test_blank_lines_spaces_delimit():
+    # NOTE: It is unclear that the `  # comment` should succeed. Except
+    #       for delimiter=None, which should use any whitespace (and maybe
+    #       should just be implemented closer to Python).
+    txt = StringIO('1 2 30\n\n4 5 60\n     \n7 8 90\n  # comment\n3 2 1')
+    a = read(txt, delimiter=' ', comment="#")
     assert_equal(a.dtype, np.uint8)
-    assert_equal(a, np.array([[1, 2, 30], [4, 5, 60], [7, 8, 90]],
+    assert_equal(a, np.array([[1, 2, 30], [4, 5, 60], [7, 8, 90], [3, 2, 1]],
                              dtype=np.uint8))
 
+def test_blank_lines_normal_delimiter():
+    txt = StringIO('1,2,30\n\n4,5,60\n\n7,8,90\n# comment\n3,2,1')
+    a = read(txt, delimiter=',', comment="#")
+    assert_equal(a.dtype, np.uint8)
+    assert_equal(a, np.array([[1, 2, 30], [4, 5, 60], [7, 8, 90], [3, 2, 1]],
+                             dtype=np.uint8))
+
+def test_quoted_field_is_not_empty():
+    txt = StringIO('1\n\n"4"\n""')
+    a = read(txt, delimiter=",", dtype="U1")
+    assert_equal(a, np.array([["1"], ["4"], [""]]))
 
 def test_max_rows():
     txt = StringIO('1.5,2.5\n3.0,4.0\n5.5,6.0')
@@ -226,6 +240,14 @@ def test_converters_and_usecols():
     assert_equal(a, [[1.5, 3.5], [3.0, np.nan], [5.5, 7.5]])
 
 
+@pytest.mark.parametrize("c1", ["a", "の", "🫕"])
+@pytest.mark.parametrize("c2", ["a", "の", "🫕"])
+def test_large_unicode_characters(c1, c2):
+    # c1 and c2 span ascii, 16bit and 32bit range.
+    txt = StringIO(f"a,{c1},c,d\ne,{c2},f,g")
+    a = read(txt, dtype=np.dtype('U12'))
+    assert_equal(a, [f"a,{c1},c,d".split(","), f"e,{c2},f,g".split(",")])
+
 def test_unicode_with_converter():
     txt = StringIO('cat,dog\nαβγ,δεζ\nabc,def\n')
     conv = {0: lambda s: s.upper()}
@@ -241,6 +263,14 @@ def test_converter_with_structured_dtype():
     expected = np.array([(15, 2.5, 'ABC'), (30, 4.0, 'DEF'), (55, 6.0, 'GHI')],
                         dtype=dt)
     assert_equal(a, expected)
+
+
+def test_read_huge_row():
+    row = '1.5,2.5,' * 50000
+    row = row[:-1] + "\n"
+    txt = StringIO(row * 2)
+    a = read(txt, delimiter=",", dtype=float)
+    assert_equal(a, np.tile([1.5, 2.5], (2, 50000)))
 
 
 @pytest.mark.parametrize('dtype, actual_dtype', [('S', np.dtype('S5')),

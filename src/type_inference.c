@@ -80,13 +80,13 @@ classify_type(char32_t *field,
             }
             /*@fallthrough@*/
         case 'f':
-            success = to_double(field, &real, sci, decimal);
+            success = to_double_raw(field, &real, decimal, sci);
             if (success) {
                 return 'f';
             }
             /*@fallthrough@*/
         case 'c':
-            success = to_complex(field, &real, &imag, sci, decimal, imaginary_unit,
+            success = to_complex_raw(field, &real, &imag, sci, decimal, imaginary_unit,
                                  ALLOW_PARENS);
             if (success) {
                 return 'c';

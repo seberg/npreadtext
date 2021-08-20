@@ -216,6 +216,9 @@ _readtext_from_stream(stream *s, char *filename, parser_config *pc,
                 converters, PyArray_DATA(arr), &num_cols, homogeneous,
                 needs_init,  /* unused, data is allocated and initialized */
                 &read_error);
+        if (result == NULL && PyErr_Occurred()) {
+            return NULL;
+        }
         if (read_error.error_type != 0) {
             /* TODO: Has to use the goto finish here, probably. */
             free(ft);
@@ -227,6 +230,7 @@ _readtext_from_stream(stream *s, char *filename, parser_config *pc,
     else {
         // A dtype was given.
         read_error_type read_error;
+        read_error.error_type = 0;
         int num_cols;
         int ndim;
         int num_rows = nrows;
@@ -234,10 +238,23 @@ _readtext_from_stream(stream *s, char *filename, parser_config *pc,
                                   (ft[0].itemsize == 0) &&
                                   ((ft[0].typecode == 'S') ||
                                    (ft[0].typecode == 'U')));
+        if (track_string_size) {
+            /*
+             * The string size tracking currently mutates the descriptor,
+             * so we have to make a copy that we own (but can use it later)
+             */
+            ft[0].descr = PyArray_DescrNewFromType(ft[0].descr->type_num);
+            if (ft[0].descr == NULL) {
+                return NULL;
+            }
+        }
         void *result = read_rows(s, &num_rows, num_fields, ft, pc,
                                  cols, ncols, skiprows, converters,
                                  NULL, &num_cols, homogeneous, needs_init,
                                  &read_error);
+        if (result == NULL && PyErr_Occurred()) {
+            return NULL;
+        }
         if (read_error.error_type != 0) {
             /* TODO: Has to use the goto finish here, probably. */
             /*
@@ -269,16 +286,9 @@ _readtext_from_stream(stream *s, char *filename, parser_config *pc,
             shape[1] = 1;  // Not actually necessary to fill this in.
         }
         if (track_string_size) {
-            // We need a new dtype for the string/unicode object, since
-            // the input dtype has length 0.
-            PyArray_Descr *dt;
-            if (ft[0].typecode == 'S') {
-                dt =  PyArray_DescrNewFromType(NPY_STRING);
-            }
-            else {
-                dt = PyArray_DescrNewFromType(NPY_UNICODE);
-            }
-            dt->elsize = ft[0].itemsize;
+            /* The reading modified `ft[0]` in-place, use it */
+            PyArray_Descr *dt = ft[0].descr;
+            Py_INCREF(dt);
             // XXX Fix memory management - `result` was malloc'd.
             arr = PyArray_NewFromDescr(&PyArray_Type, dt,
                                        ndim, shape, NULL, result, 0, NULL);
@@ -360,6 +370,11 @@ _readtext_from_file_object(PyObject *self, PyObject *args, PyObject *kwargs)
     pc.ignore_trailing_spaces = false;
     pc.ignore_blank_lines = true;
     pc.strict_num_fields = false;
+
+    if (pc.delimiter == ' ' || pc.delimiter == '\0') {
+        pc.delimiter = ' ';
+        pc.ignore_leading_spaces = true;
+    }
 
     /*
      * TODO: This needs some hefty input validation!
