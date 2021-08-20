@@ -329,12 +329,12 @@ read_rows(stream *s,
             if (converters != Py_None) {
                 conv_funcs = create_conv_funcs(converters, usecols, num_usecols,
                                                current_num_fields, read_error);
-                if (conv_funcs == NULL) {
-                    return NULL;
-                }
             }
             else {
                 conv_funcs = calloc(num_usecols, sizeof(PyObject *));
+            }
+            if (conv_funcs == NULL) {
+                return NULL;
             }
 
             if (track_string_size) {
@@ -374,8 +374,7 @@ read_rows(stream *s,
                 if (blks == NULL) {
                     // XXX Check for other clean up that might be necessary.
                     read_error->error_type = ERROR_OUT_OF_MEMORY;
-                    free(conv_funcs);
-                    return NULL;
+                    goto error;
                 }
             }
             else {
@@ -385,10 +384,11 @@ read_rows(stream *s,
                     // The number of rows to read was given, but a memory buffer
                     // was not, so allocate one here.
                     size = *nrows * row_size;
+                    // TODO: this is wrong, it can never be freed, do we need this?
                     data_array = malloc(size);
                     if (data_array == NULL) {
                         read_error->error_type = ERROR_OUT_OF_MEMORY;
-                        return NULL;
+                        goto error;
                     }
                 }
                 data_ptr = data_array;
@@ -425,18 +425,14 @@ read_rows(stream *s,
             read_error->error_type = ERROR_CHANGED_NUMBER_OF_FIELDS;
             read_error->line_number = row_count + 1;
             read_error->column_index = current_num_fields;
-            if (use_blocks) {
-                blocks_destroy(blks);
-            }
-            return NULL;
+            goto error;
         }
 
         if (use_blocks) {
             data_ptr = blocks_get_row_ptr(blks, row_count, needs_init);
             if (data_ptr == NULL) {
-                blocks_destroy(blks);
                 read_error->error_type = ERROR_OUT_OF_MEMORY;
-                return NULL;
+                goto error;
             }
         }
 
@@ -456,7 +452,7 @@ read_rows(stream *s,
                     read_error->error_type = ERROR_INVALID_COLUMN_INDEX;
                     read_error->line_number = row_count - 1;
                     read_error->column_index = usecols[j];
-                    break;
+                    goto error;
                 }
             }
 
@@ -464,7 +460,7 @@ read_rows(stream *s,
                 PyErr_SetString(PyExc_NotImplementedError,
                         "internal error, k >= current_num_fields should not "
                         "be possible (and is note implemented)!");
-                return NULL;
+                goto error;
             }
 
             int err = 0;
@@ -491,12 +487,8 @@ read_rows(stream *s,
                 read_error->field_number = k;
                 read_error->char_position = -1; // FIXME
                 read_error->descr = field_types[f].descr;
-                break;
+                goto error;
             }
-        }
-
-        if (read_error->error_type != 0) {
-            break;
         }
 
         ++row_count;
@@ -521,5 +513,14 @@ read_rows(stream *s,
     if (read_error->error_type) {
         return NULL;
     }
+    free(conv_funcs);
     return (void *) data_array;
+
+  error:
+    free(conv_funcs);
+    tokenizer_clear(&ts);
+    if (use_blocks) {
+        blocks_destroy(blks);
+    }
+    return NULL;
 }
