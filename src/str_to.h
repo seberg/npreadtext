@@ -22,6 +22,12 @@
 #define ERROR_MINUS_SIGN     4
 
 /*
+ * The following two string conversion functions are largely equivalent
+ * in Pandas.  They are in the header file here, to ensure they can be easily
+ * inline in the other function.
+ */
+
+/*
  *  On success, *error is zero.
  *  If the conversion fails, *error is nonzero, and the return value is 0.
  */
