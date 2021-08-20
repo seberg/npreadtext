@@ -227,7 +227,8 @@ def test_max_rows(dtype):
 @pytest.mark.parametrize('dtype', [np.dtype('f8'), np.dtype('i2')])
 def test_bad_values(dtype):
     txt = StringIO('1.5,2.5\n3.0,XXX\n5.5,6.0')
-    with pytest.raises(RuntimeError, match=f'bad {dtype.name} value'):
+    msg = f"could not convert string .XXX. to {dtype} at row 1, column 2"
+    with pytest.raises(ValueError, match=msg):
         read(txt, dtype=dtype)
 
 

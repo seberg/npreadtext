@@ -36,7 +36,6 @@ read_rows(stream *s,
         int *nrows, int num_field_types, field_type *field_types,
         parser_config *pconfig, int32_t *usecols, int num_usecols,
         int skiplines, PyObject *converters, char *data_array,
-        int *num_cols, bool homogeneous, bool needs_init,
-        read_error_type *read_error);
+        int *num_cols, bool homogeneous, bool needs_init);
 
 #endif
