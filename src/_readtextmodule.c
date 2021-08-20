@@ -230,6 +230,7 @@ _readtext_from_stream(stream *s, char *filename, parser_config *pc,
     else {
         // A dtype was given.
         read_error_type read_error;
+        read_error.error_type = 0;
         int num_cols;
         int ndim;
         int num_rows = nrows;

@@ -8,9 +8,43 @@
 #define NO_IMPORT_ARRAY
 #include "numpy/ndarraytypes.h"
 
+#include "typedefs.h"
+#include "parser_config.h"
+
+/*
+ * The original code had some error details, but I assume that we don't need
+ * it.  Printing the string from which we tried to modify it should be fine.
+ * This should potentially be public NumPy API, although it is tricky, NumPy
+ *
+ * This function must support unaligned memory access.
+ *
+ * TODO: An earlier version of the code had unused default versions (pandas
+ *       does this) when columns are missing.  We could define this either
+ *       by passing `NULL` in, or by adding a default explicitly somewhere.
+ *       (I think users should probably have to define the default, at which
+ *       point it doesn't matter here.)
+ *
+ * NOTE: `userdata` is ill defined currently, we would need a mechanism to
+ *       make it public.  Right now, it is the Python conversion function
+ *       or a pointer to the floating point options.
+ *       An alternative might be to instead add a translation step first.
+ */
+typedef int (set_from_ucs4_function)(
+        PyArray_Descr *descr, const char32_t *str, const char32_t *end,
+        char *dataptr, void *userdata);
 
 typedef struct _field_type {
-    // typecode:
+    set_from_ucs4_function *set_from_ucs4;
+    /* The original NumPy descriptor */
+    PyArray_Descr *descr;
+    void *userdata;
+
+    // itemsize:
+    //   Size of field, in bytes.  In theory this would only be
+    //   needed for the 'S' or 'U' type codes, but it is expected to be
+    //   correctly filled in for all the types.
+    size_t itemsize;
+    // typecode used currently during discovery:
     //     * : undefined field type (during auto-discovery)
     //     i : integer (byte to long long)
     //     u : unsigned integer (ubyte to unsigned long long)
@@ -21,17 +55,6 @@ typedef struct _field_type {
     //     U : Unicode string (32 bit codepoints)
     //     x : generic dtype.
     char typecode;
-    /* Whether the simple(!) typecode descriptor needs swapping */
-    bool swap;
-
-    // itemsize:
-    //   Size of field, in bytes.  In theory this would only be
-    //   needed for the 'S' or 'U' type codes, but it is expected to be
-    //   correctly filled in for all the types.
-    size_t itemsize;
-
-    /* The original NumPy descriptor */
-    PyArray_Descr *descr;
 } field_type;
 
 
@@ -40,6 +63,9 @@ field_types_clear(int num_field_types, field_type *ft);
 
 field_type *
 field_types_create(int num_field_types, PyArray_Descr *dtypes[]);
+
+int
+field_types_prepare_parsing(int num, field_type *ft, parser_config *pconfig);
 
 void
 field_types_fprintf(FILE *out, int num_field_types, const field_type *ft);

@@ -31,8 +31,6 @@
 #define INITIAL_BLOCKS_TABLE_LENGTH 200
 #define ROWS_PER_BLOCK 500
 
-#define ALLOW_PARENS true
-
 
 /*
  * Defines liberated from NumPy's, only used for the PyArray_Pack hack!
@@ -69,26 +67,6 @@ compute_row_size(
     return row_size;
 }
 
-
-PyObject *
-call_converter_function(PyObject *func, char32_t *token)
-{
-    Py_ssize_t tokenlen = 0;
-    while (token[tokenlen]) {
-        ++tokenlen;
-    }
-    PyObject *s = PyUnicode_FromKindAndData(PyUnicode_4BYTE_KIND, token, tokenlen);
-    if (s == NULL || func == NULL) {
-        // fprintf(stderr, "*** PyUnicode_FromKindAndData failed ***\n");
-        return s;
-    }
-    PyObject *result = PyObject_CallFunctionObjArgs(func, s, NULL);
-    Py_DECREF(s);
-    if (result == NULL) {
-        // fprintf(stderr, "*** PyObject_CallFunctionObjArgs failed ***\n");
-    }
-    return result;
-}
 
 /*
  *  Find the length of the longest token.
@@ -135,7 +113,8 @@ max_token_len_with_converters(
         }
 
         if (conv_funcs && conv_funcs[j]) {
-            PyObject *obj = call_converter_function(conv_funcs[i], tokens[j]);
+            // TODO: Moved converter calling function out of here.
+            PyObject *obj = NULL; //call_converter_function(conv_funcs[i], tokens[j]);
             if (obj == NULL) {
                 fprintf(stderr, "CALL FAILED!\n");
             }
@@ -261,14 +240,14 @@ read_rows(stream *s,
 
     bool track_string_size = false;
 
-    bool use_blocks;
+    bool use_blocks = false;
     blocks_data *blks = NULL;
 
 
     int ts_result = 0;
     tokenizer_state ts;
     if (tokenizer_init(&ts, pconfig) < 0) {
-        return -1;
+        return NULL;
     }
 
     int actual_num_fields = -1;
@@ -342,6 +321,11 @@ read_rows(stream *s,
                 }
             }
 
+            if (field_types_prepare_parsing(
+                        num_field_types, field_types, pconfig) < 0) {
+                return NULL;
+            }
+
             if (converters != Py_None) {
                 conv_funcs = create_conv_funcs(converters, usecols, num_usecols,
                                                current_num_fields, read_error);
@@ -369,14 +353,17 @@ read_rows(stream *s,
                     maxlen = max_token_len(fields, actual_num_fields,
                                            usecols, num_usecols);
                 }
-                field_types[0].itemsize = (field_types[0].typecode == 'S') ? maxlen : 4*maxlen;
+
+                size_t new_itemsize;
+                new_itemsize = (field_types[0].typecode == 'S') ? maxlen : 4*maxlen;
+                field_types[0].itemsize = new_itemsize;
+                field_types[0].descr->elsize = new_itemsize;
             }
 
             *num_cols = actual_num_fields;
             row_size = compute_row_size(actual_num_fields,
                                         num_field_types, field_types);
 
-            use_blocks = false;
             if (*nrows < 0) {
                 // Any negative value means "read the entire file".
                 // In this case, it is assumed that *data_array is NULL
@@ -453,14 +440,8 @@ read_rows(stream *s,
             }
         }
 
-        for (j = 0; j < num_usecols; ++j) {
-            // f is the index into the field_types array.  If there is only
-            // one field type, it applies to all fields found in the file.
+        for (int j = 0; j < num_usecols; ++j) {
             int f = homogeneous ? 0 : j;
-            char typecode = field_types[f].typecode;
-            size_t itemsize = field_types[f].itemsize;
-            PyObject *converted = NULL;
-
             // k is the column index of the field in the file.
             if (usecols == NULL) {
                 k = j;
@@ -479,184 +460,37 @@ read_rows(stream *s,
                 }
             }
 
-            char32_t *token = ts.field_buffer + fields[k].offset;
-
-            //PyObject_Print(field, stdout, 0);
-            //printf("<-- The current field!\n");
-
             read_error->error_type = ERROR_OK;
             read_error->line_number = row_count - 1;
             read_error->field_number = k;
             read_error->char_position = -1; // FIXME
             read_error->descr = field_types[f].descr;
 
-            int err = ERROR_OK;
-
-            /*
-             * TODO: For all fields, it is OK for the specialized parsers
-             *       to rely on the field being NUL terminated, but we should
-             *       check at least that all of the field was actually read.
-             */
-            if (typecode == 'x' || conv_funcs[j] != NULL) {
-                /* Converts to unicode and calls custom converter (if set) */
-                converted = call_converter_function(conv_funcs[j], token);
-                if (converted == NULL) {
-                    read_error->error_type = ERROR_CONVERTER_FAILED;
-                    break;
-                }
-                /* TODO: Dangerous semi-copy from PyArray_Pack which this
-                 *       should use, but cannot (it is not yet public).
-                 *       This will get some casts wrong (unlike PyArray_Pack),
-                 *       and like it (currently) does necessarily handle an
-                 *       array return correctly (but maybe that is fine).
-                 */
-                PyArrayObject_fields arr_fields = {
-                        .flags = NPY_ARRAY_WRITEABLE,  /* assume array is not behaved. */
-                };
-                Py_SET_TYPE(&arr_fields, &PyArray_Type);
-                Py_SET_REFCNT(&arr_fields, 1);
-                arr_fields.descr = field_types[f].descr;
-                int res = field_types[f].descr->f->setitem(
-                        converted, data_ptr, &arr_fields);
-                Py_DECREF(converted);
-                if (res < 0) {
-                    read_error->error_type = ERROR_CONVERTER_FAILED;
-                    break;
-                }
-                data_ptr += field_types[f].itemsize;
-                continue;
+            if (k >= current_num_fields) {
+                PyErr_SetString(PyExc_NotImplementedError,
+                        "internal error, k >= current_num_fields should not "
+                        "be possible (and is note implemented)!");
+                return NULL;
             }
 
-            /* Fast paths, use when possible. */
-            if (k >= current_num_fields && (
-                    typecode == 'i' || typecode == 'u')) {
-                /* Memset here for simplicity with integers */
-                memset(data_ptr, '\0', itemsize);
-            }
-            else if (typecode == 'i') {
-                switch (itemsize) {
-                    case 1:
-                        err = to_int8(token, pconfig, data_ptr);
-                        break;
-                    case 2:
-                        err = to_int16(token, pconfig, data_ptr);
-                        break;
-                    case 4:
-                        err = to_int32(token, pconfig, data_ptr);
-                        break;
-                    case 8:
-                        err = to_int64(token, pconfig, data_ptr);
-                        break;
-                    default:
-                        assert(0);
-                }
-                if (err) {
-                    read_error->error_type = err;
+            char32_t *str = ts.field_buffer + fields[k].offset;
+            char32_t *end = ts.field_buffer + fields[k + 1].offset - 1;
+            if (conv_funcs[j] == NULL) {
+                if (field_types[f].set_from_ucs4(field_types[f].descr,
+                        str, end, data_ptr, field_types[f].userdata) < 0) {
+                    read_error->error_type = ERROR_BAD_FIELD;
                     break;
                 }
             }
-            else if (typecode == 'u') {
-                switch (itemsize) {
-                    case 1:
-                        err = to_uint8(token, pconfig, data_ptr);
-                        break;
-                    case 2:
-                        err = to_uint16(token, pconfig, data_ptr);
-                        break;
-                    case 4:
-                        err = to_uint32(token, pconfig, data_ptr);
-                        break;
-                    case 8:
-                        err = to_uint64(token, pconfig, data_ptr);
-                        break;
-                    default:
-                        assert(0);
-                }
-                if (err) {
-                    read_error->error_type = err;
+            else {
+                /* TODO: This dual-use of to_generic is maybe not great */
+                if (to_generic(field_types[f].descr,
+                        str, end, data_ptr, conv_funcs[j]) < 0) {
+                    read_error->error_type = ERROR_BAD_FIELD;
                     break;
-                }
-            }
-            else if (typecode == 'f') {
-                // Convert to float.
-                double x = NAN;
-                if (k < current_num_fields) {
-                    char32_t decimal = pconfig->decimal;
-                    char32_t sci = pconfig->sci;
-                    if ((*token == '\0') || !to_double(token, &x, sci, decimal)) {
-                        read_error->error_type = ERROR_BAD_FIELD;
-                        break;
-                    }
-                }
-                if (itemsize == 4) {
-                    float result = x;
-                    memcpy(data_ptr, &result, sizeof(float));
-                }
-                else {
-                    memcpy(data_ptr, &x, sizeof(double));
-                }
-            }
-            else if (typecode == 'c') {
-                // Convert to complex.
-                double x = NAN;
-                double y = NAN;
-                if (k < current_num_fields) {
-                    char32_t decimal = pconfig->decimal;
-                    char32_t sci = pconfig->sci;
-                    char32_t imaginary_unit = pconfig->imaginary_unit;
-                    if ((*(token) == '\0') || !to_complex(token, &x, &y,
-                                                              sci, decimal,
-                                                              imaginary_unit,
-                                                              ALLOW_PARENS)) {
-                        read_error->error_type = ERROR_BAD_FIELD;
-                        break;
-                    }
-                }
-                if (itemsize == 8) {
-                    complex float result = x + I*y;
-                    memcpy(data_ptr, &result, sizeof(result));
-                }
-                else {
-                    complex double result = x + I*y;
-                    memcpy(data_ptr, &result, sizeof(result));
-                }
-            }
-            else if (typecode == 'S') {
-                // String
-                if (k < current_num_fields) {
-                    //strncpy(data_ptr, result[k], field_types[f].itemsize);
-                    size_t i = 0;
-                    while (i < (size_t) field_types[f].itemsize && token[i]) {
-                        data_ptr[i] = token[i];
-                        ++i;
-                    }
-                    memset(data_ptr + i, 0, field_types[f].itemsize - i);
-                }
-                else {
-                    memset(data_ptr, 0, field_types[f].itemsize);
-                }
-            }
-            else if (typecode == 'U') {
-                if (k < current_num_fields) {
-                    size_t i = 0;
-                    // XXX The '4's in the following are sizeof(char32_t).
-                    while (i < (size_t) field_types[f].itemsize/4 && token[i]) {
-                        memcpy(data_ptr + 4*i, &token[i], 4);
-                        ++i;
-                    }
-                    for (i *= 4; i < (size_t)field_types[f].itemsize; i++) {
-                        *(char32_t *)(data_ptr + i) = '\0';
-                    }
-                }
-                else {
-                    memset(data_ptr, 0, field_types[f].itemsize);
                 }
             }
 
-            if (field_types[f].swap) {
-                /* This is awkward, but OK for the basic dtypes above */
-                field_types[f].descr->f->copyswap(data_ptr, data_ptr, 1, NULL);
-            }
             data_ptr += field_types[f].itemsize;
         }
 
