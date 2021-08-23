@@ -120,9 +120,10 @@ tokenizer_core_@type@(tokenizer_state *ts, parser_config *const config)
     @type@ *chunk_start;
 
     if (ts->state == TOKENIZE_CHECK_QUOTED) {
-        /* before we can check for quotes, strip leading spaces */
-        if (config->ignore_leading_spaces) {
-            while (pos < stop && *pos == ' ') {
+        /* before we can check for quotes, strip leading whitespace */
+        if (config->ignore_leading_whitespace) {
+            while (pos < stop && Py_UNICODE_ISSPACE(*pos) &&
+                        *pos != '\r' && *pos != '\n') {
                 pos++;
             }
             if (pos == stop) {
@@ -138,7 +139,8 @@ tokenizer_core_@type@(tokenizer_state *ts, parser_config *const config)
             pos++;  /* TOKENIZE_QUOTED is OK with pos == stop */
         }
         else {
-            ts->state = TOKENIZE_UNQUOTED;
+            /* Set to TOKENIZE_QUOTED or TOKENIZE_QUOTED_WHITESPACE */
+            ts->state = ts->unquoted_state;
         }
     }
 
@@ -155,6 +157,39 @@ tokenizer_core_@type@(tokenizer_state *ts, parser_config *const config)
                     break;
                 }
                 else if (*pos == config->delimiter) {
+                    ts->state = TOKENIZE_INIT;
+                    break;
+                }
+                else if (*pos == config->comment[0]) {
+                    if (config->comment[1] != '\0') {
+                        ts->state = TOKENIZE_CHECK_COMMENT;
+                        break;
+                    }
+                    else {
+                        ts->state = TOKENIZE_GOTO_LINE_END;
+                        break;
+                    }
+                }
+            }
+            if (copy_to_field_buffer_@type@(ts, chunk_start, pos) < 0) {
+                return -1;
+            }
+            pos++;
+            break;
+
+        case TOKENIZE_UNQUOTED_WHITESPACE:
+            /* Note, this branch is largely identical to `TOKENIZE_UNQUOTED` */
+            chunk_start = pos;
+            for (; pos < stop; pos++) {
+                if (*pos == '\n') {
+                    ts->state = TOKENIZE_EAT_CRLF;
+                    break;
+                }
+                else if (*pos == '\r') {
+                    ts->state = TOKENIZE_LINE_END;
+                    break;
+                }
+                else if (Py_UNICODE_ISSPACE(*pos)) {
                     ts->state = TOKENIZE_INIT;
                     break;
                 }
@@ -235,9 +270,12 @@ tokenizer_core_@type@(tokenizer_state *ts, parser_config *const config)
                 ts->state = TOKENIZE_LINE_END;
             }
             for (; pos < stop; pos++) {
-                if (*pos == '\r' || *pos == '\n') {
+                if (*pos == '\r') {
                     ts->state = TOKENIZE_EAT_CRLF;
                     break;
+                }
+                else if (*pos == '\n') {
+                    ts->state = TOKENIZE_LINE_END;
                 }
             }
             break;
@@ -378,12 +416,23 @@ tokenizer_clear(tokenizer_state *ts)
 }
 
 
+/*
+ * Initialize the tokenizer.  We may want to copy all important config
+ * variables into the tokenizer.  This would improve the cache locality during
+ * tokenizing.
+ */
 int
 tokenizer_init(tokenizer_state *ts, parser_config *config)
 {
     /* State and buf_state could be moved into tokenize if we go by row */
     ts->buf_state = BUFFER_MAY_CONTAIN_NEWLINE;
     ts->state = TOKENIZE_INIT;
+    if (config->delimiter_is_whitespace) {
+        ts->unquoted_state = TOKENIZE_UNQUOTED_WHITESPACE;
+    }
+    else {
+        ts->unquoted_state = TOKENIZE_UNQUOTED;
+    }
     ts->num_fields = 0;
 
     ts->buf_state = 0;

@@ -190,15 +190,19 @@ def test_unpack_array():
     assert_array_equal(c, np.array([3.0, 6.0, 9.0, 2.0]))
 
 
-def test_blank_lines_spaces_delimit():
+@pytest.mark.parametrize("ws",
+        "\t\u2003\u00A0\u3000") # tab and em, non-break, and ideographic space
+def test_blank_lines_spaces_delimit(ws):
     # NOTE: It is unclear that the `  # comment` should succeed. Except
     #       for delimiter=None, which should use any whitespace (and maybe
     #       should just be implemented closer to Python).
-    txt = StringIO('1 2 30\n\n4 5 60\n     \n7 8 90\n  # comment\n3 2 1')
-    a = read(txt, delimiter=' ', comment="#")
+    txt = StringIO(
+        f'1 2{ws}30\n\n4 5 60\n  {ws}  \n7 8 {ws} 90\n  # comment\n3 2 1')
+    a = read(txt, delimiter='', comment="#")
     assert_equal(a.dtype, np.uint8)
     assert_equal(a, np.array([[1, 2, 30], [4, 5, 60], [7, 8, 90], [3, 2, 1]],
                              dtype=np.uint8))
+
 
 def test_blank_lines_normal_delimiter():
     txt = StringIO('1,2,30\n\n4,5,60\n\n7,8,90\n# comment\n3,2,1')

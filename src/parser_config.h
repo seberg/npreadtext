@@ -24,11 +24,16 @@ typedef struct _parser_config {
     char32_t quote;
 
     /*
-     *  Ignore spaces at the beginning of a field.  Only relevant for
-     *  text fields, and only when the delimiter is not whitespace.
-     *  Spaces in quotes are never ignored.
+     *  Ignore whitespace at the beginning of a field (outside/before quotes).
+     *  Is implicitly always set if we split on any whitespace.
      */
-    bool ignore_leading_spaces;
+    bool ignore_leading_whitespace;
+
+    /*
+     * If true, the delimiter is ignored and any unicode whitespace is used
+     * for splitting (same as `string.split()` in Python).
+     */
+    bool delimiter_is_whitespace;
 
     /*
      *  Ignore spaces at the end of a field.  Only relevant for
