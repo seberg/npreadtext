@@ -299,15 +299,6 @@ read_rows(stream *s,
             if (usecols == NULL) {
                 num_usecols = actual_num_fields;
             }
-            else {
-                // Normalize the values in usecols.
-                for (j = 0; j < num_usecols; ++j) {
-                    if (usecols[j] < 0) {
-                        usecols[j] += current_num_fields;
-                    }
-                    // XXX Check that the value is between 0 and current_num_fields.
-                }
-            }
 
             if (converters != Py_None) {
                 conv_funcs = create_conv_funcs(converters, usecols, num_usecols,

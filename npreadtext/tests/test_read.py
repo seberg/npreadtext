@@ -240,6 +240,13 @@ def test_converters_and_usecols():
     assert_equal(a, [[1.5, 3.5], [3.0, np.nan], [5.5, 7.5]])
 
 
+def test_ragged_usecols():
+    # Usecols, and negative ones, even work with variying number of columns
+    txt = StringIO('0,0,XXX\n0,XXX,0,XXX\n0,XXX,XXX,0,XXX\n')
+    a = read(txt, dtype=np.float64, usecols=[0, -2])
+    assert_equal(a, [[0, 0], [0, 0], [0, 0]])
+
+
 @pytest.mark.parametrize("c1", ["a", "の", "🫕"])
 @pytest.mark.parametrize("c2", ["a", "の", "🫕"])
 def test_large_unicode_characters(c1, c2):
