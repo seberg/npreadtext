@@ -359,3 +359,21 @@ def test_read_from_generator_2():
     data = read(gen(), dtype='i,d', delimiter=' ')
     expected = np.array([(0, 0.0), (1, 0.25), (2, 0.5)], dtype='i,d')
     assert_equal(data, expected)
+
+
+def test_read_from_bad_generator():
+    class BadFileLike:
+        lines = iter(["1,2", b"3,5", 12738])
+
+        def readline(self):
+            return next(self.lines)
+
+        def seek(self):
+            raise NotImplementedError
+
+        def tell(self):
+            raise NotImplementedError
+
+    with pytest.raises(TypeError,
+            match=r"object.readline\(\) returned non-string"):
+        read(BadFileLike(), dtype='i,i', delimiter=',')

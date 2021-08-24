@@ -114,6 +114,12 @@ _fb_load(python_file_by_line *fb)
         }
         Py_SETREF(fb->line, uline);
     }
+    else if (!PyUnicode_Check(line)) {
+        PyErr_SetString(PyExc_TypeError,
+                "object.readline() returned non-string");
+        Py_CLEAR(fb->line);
+        return -1;
+    }
 
     fb->linelen = PyUnicode_GET_LENGTH(fb->line);
 
