@@ -15,6 +15,7 @@
 
 #include "numpy/ndarraytypes.h"
 
+
 /*
     How parsing quoted fields works:
 
@@ -148,6 +149,9 @@ tokenizer_core_@type@(tokenizer_state *ts, parser_config *const config)
         case TOKENIZE_UNQUOTED:
             chunk_start = pos;
             for (; pos < stop; pos++) {
+                if (!BLOOM(ts->bloom_mask_unquoted, *pos)) {
+                    continue;
+                }
                 if (*pos == '\n') {
                     ts->state = TOKENIZE_EAT_CRLF;
                     break;
@@ -181,6 +185,9 @@ tokenizer_core_@type@(tokenizer_state *ts, parser_config *const config)
             /* Note, this branch is largely identical to `TOKENIZE_UNQUOTED` */
             chunk_start = pos;
             for (; pos < stop; pos++) {
+                if (!BLOOM(ts->bloom_mask_unquoted_whitespace, *pos)) {
+                    continue;
+                }
                 if (*pos == '\n') {
                     ts->state = TOKENIZE_EAT_CRLF;
                     break;
@@ -213,6 +220,9 @@ tokenizer_core_@type@(tokenizer_state *ts, parser_config *const config)
         case TOKENIZE_QUOTED:
             chunk_start = pos;
             for (; pos < stop; pos++) {
+                if (!BLOOM(ts->bloom_mask_quoted, *pos)) {
+                    continue;
+                }
                 if (!config->allow_embedded_newline) {
                     if (*pos == '\n') {
                         ts->state = TOKENIZE_EAT_CRLF;
@@ -417,6 +427,58 @@ tokenizer_clear(tokenizer_state *ts)
 
 
 /*
+ * The following bloom filter code us borrowed from Python (3.10)
+ * `unicodeobject.c`. (As well as the defines in `tokenize.h`)
+ */
+
+/* --- Bloom Filters ----------------------------------------------------- */
+
+/* stuff to implement simple "bloom filters" for Unicode characters.
+   to keep things simple, we use a single bitmask, using the least 5
+   bits from each unicode characters as the bit index. */
+
+/* the linebreak mask is set up by _PyUnicode_Init() below */
+
+static inline BLOOM_MASK
+make_bloom_mask(int kind, const void* ptr, Py_ssize_t len)
+{
+#define BLOOM_UPDATE(TYPE, MASK, PTR, LEN)             \
+    do {                                               \
+        TYPE *data = (TYPE *)PTR;                      \
+        TYPE *end = data + LEN;                        \
+        Py_UCS4 ch;                                    \
+        for (; data != end; data++) {                  \
+            ch = *data;                                \
+            MASK |= (1UL << (ch & (BLOOM_WIDTH - 1))); \
+        }                                              \
+        break;                                         \
+    } while (0)
+
+    /* calculate simple bloom-style bitmask for a given unicode string */
+
+    BLOOM_MASK mask;
+
+    mask = 0;
+    switch (kind) {
+        case PyUnicode_1BYTE_KIND:
+            BLOOM_UPDATE(Py_UCS1, mask, ptr, len);
+            break;
+        case PyUnicode_2BYTE_KIND:
+            BLOOM_UPDATE(Py_UCS2, mask, ptr, len);
+            break;
+        case PyUnicode_4BYTE_KIND:
+            BLOOM_UPDATE(Py_UCS4, mask, ptr, len);
+            break;
+        default:
+            Py_UNREACHABLE();
+    }
+    return mask;
+
+#undef BLOOM_UPDATE
+}
+
+
+/*
  * Initialize the tokenizer.  We may want to copy all important config
  * variables into the tokenizer.  This would improve the cache locality during
  * tokenizing.
@@ -427,6 +489,33 @@ tokenizer_init(tokenizer_state *ts, parser_config *config)
     /* State and buf_state could be moved into tokenize if we go by row */
     ts->buf_state = BUFFER_MAY_CONTAIN_NEWLINE;
     ts->state = TOKENIZE_INIT;
+
+    /* All whitespaces (based on Python) with \r and \n ommited */
+    Py_UCS4 ws_buf[] = {
+            0x0009, 0x000B, 0x000C, 0x001C, 0x001D, 0x001E, 0x001F, 0x0020,
+            0x0085, 0x00A0, 0x1680, 0x2000, 0x2001, 0x2002, 0x2003, 0x2004,
+            0x2005, 0x2006, 0x2007, 0x2008, 0x2009, 0x200A, 0x2028, 0x2029,
+            0x202F, 0x205F, 0x3000};
+
+    Py_UCS4 buf[4];
+    buf[0] = '\n';
+    buf[1] = '\r';
+    buf[3] = config->delimiter;
+    buf[4] = config->comment[0];
+
+    ts->bloom_mask_unquoted = make_bloom_mask(
+            PyUnicode_4BYTE_KIND, buf, 4);
+    buf[3] = config->quote;
+    ts->bloom_mask_quoted = make_bloom_mask(
+            PyUnicode_4BYTE_KIND, buf, 3);
+
+    ts->bloom_mask_whitespace = make_bloom_mask(
+            PyUnicode_4BYTE_KIND, ws_buf, sizeof(ws_buf) / sizeof(Py_UCS4));
+    ts->bloom_mask_unquoted_whitespace = ts->bloom_mask_whitespace;
+    buf[0] = config->quote;
+    ts->bloom_mask_unquoted_whitespace |= make_bloom_mask(
+            PyUnicode_4BYTE_KIND, buf, 1);
+
     if (config->delimiter_is_whitespace) {
         ts->unquoted_state = TOKENIZE_UNQUOTED_WHITESPACE;
     }

@@ -5,6 +5,7 @@
 #include "typedefs.h"
 #include "stream.h"
 #include "parser_config.h"
+#include "numpy/ndarraytypes.h"
 
 
 typedef enum {
@@ -32,6 +33,20 @@ typedef struct {
 } field_info;
 
 
+#if NPY_BITSOF_LONG >= 128
+#define BLOOM_WIDTH 128
+#elif NPY_BITSOF_LONG >= 64
+#define BLOOM_WIDTH 64
+#elif NPY_BITSOF_LONG >= 32
+#define BLOOM_WIDTH 32
+#else
+#error "NPY_BITSOF_LONG is smaller than 32"
+#endif
+
+#define BLOOM_MASK unsigned long
+#define BLOOM(mask, ch)     ((mask &  (1UL << ((ch) & (BLOOM_WIDTH - 1)))))
+
+
 typedef struct {
     tokenizer_parsing_state state;
     bool ignore_leading_whitespace;
@@ -43,6 +58,11 @@ typedef struct {
     /* the buffer we are currently working on */
     char *pos;
     char *end;
+    /* bloom filters */
+    BLOOM_MASK bloom_mask_unquoted;
+    BLOOM_MASK bloom_mask_quoted;
+    BLOOM_MASK bloom_mask_whitespace;
+    BLOOM_MASK bloom_mask_unquoted_whitespace;
     /*
      * Space to copy words into.  The buffer must always be at least two NUL
      * entries longer (8 bytes) than the actual word (including initially).
