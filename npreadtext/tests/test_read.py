@@ -216,11 +216,12 @@ def test_quoted_field_is_not_empty():
     a = read(txt, delimiter=",", dtype="U1")
     assert_equal(a, np.array([["1"], ["4"], [""]]))
 
-def test_max_rows():
+@pytest.mark.parametrize("dtype", [np.float64, object])
+def test_max_rows(dtype):
     txt = StringIO('1.5,2.5\n3.0,4.0\n5.5,6.0')
-    a = read(txt, dtype=np.float64, max_rows=2)
-    assert_equal(a.dtype, np.float64)
-    assert_equal(a, np.array([[1.5, 2.5], [3.0, 4.0]]))
+    a = read(txt, dtype=dtype, max_rows=2)
+    assert_equal(a.dtype, dtype)
+    assert_equal(a, np.array([["1.5", "2.5"], ["3.0", "4.0"]], dtype=dtype))
 
 
 @pytest.mark.parametrize('dtype', [np.dtype('f8'), np.dtype('i2')])
@@ -249,6 +250,13 @@ def test_ragged_usecols():
     txt = StringIO('0,0,XXX\n0,XXX,0,XXX\n0,XXX,XXX,0,XXX\n')
     a = read(txt, dtype=np.float64, usecols=[0, -2])
     assert_equal(a, [[0, 0], [0, 0], [0, 0]])
+
+
+def test_empty_usecols():
+    txt = StringIO('0,0,XXX\n0,XXX,0,XXX\n0,XXX,XXX,0,XXX\n')
+    a = read(txt, dtype=np.dtype([]), usecols=[])
+    assert a.shape == (3,)
+    assert a.dtype == np.dtype([])
 
 
 @pytest.mark.parametrize("c1", ["a", "の", "🫕"])

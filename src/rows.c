@@ -1,6 +1,4 @@
 
-#define _XOPEN_SOURCE 700
-
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 
@@ -200,7 +198,6 @@ read_rows(stream *s,
     char *data_ptr = NULL;
     int current_num_fields;
     size_t row_size;
-    size_t size;
     PyObject **conv_funcs = NULL;
 
     bool track_string_size = false;
@@ -289,17 +286,23 @@ read_rows(stream *s,
             row_size = compute_row_size(actual_num_fields,
                                         num_field_types, field_types);
 
-            if (*nrows < 0) {
-                // Any negative value means "read the entire file".
-                // In this case, it is assumed that *data_array is NULL
-                // or not initialized. I.e. the value passed in is ignored,
-                // and instead is initialized to the first block.
-                data_allocated_rows = ROWS_PER_BLOCK;
-                if (!needs_init) {
-                    data_array = malloc(data_allocated_rows * row_size);
+            if (data_array == NULL) {
+                if (*nrows < 0) {
+                    /*
+                     * Negative *nrows denotes to read the whole file, we
+                     * approach this by allocating ever larger blocks here:
+                     */
+                    data_allocated_rows = ROWS_PER_BLOCK;
                 }
                 else {
-                    data_array = calloc(data_allocated_rows * row_size, 1);
+                    data_allocated_rows = *nrows;
+                }
+                size_t size = data_allocated_rows * row_size;
+                if (!needs_init) {
+                    data_array = malloc(size ? size : 1);
+                }
+                else {
+                    data_array = calloc(size ? size : 1, 1);
                 }
                 if (data_array == NULL) {
                     // XXX Check for other clean up that might be necessary.
@@ -308,19 +311,7 @@ read_rows(stream *s,
                 }
             }
             else {
-                // *nrows >= 0
-                // FIXME: Ensure that *nrows == 0 is handled correctly.
-                if (data_array == NULL) {
-                    // The number of rows to read was given, but a memory buffer
-                    // was not, so allocate one here.
-                    size = *nrows * row_size;
-                    // TODO: this is wrong, it can never be freed, do we need this?
-                    data_array = malloc(size);
-                    if (data_array == NULL) {
-                        read_error->error_type = ERROR_OUT_OF_MEMORY;
-                        goto error;
-                    }
-                }
+                assert(*nrows >=0);
                 data_allocated_rows = *nrows;
             }
             data_ptr = data_array;
@@ -364,7 +355,8 @@ read_rows(stream *s,
             growth &= ~(size_t)(ROWS_PER_BLOCK-1);
             size_t new_rows = data_allocated_rows + growth;
 
-            char *new_arr = realloc(data_array, new_rows * row_size);
+            size_t size = new_rows * row_size;
+            char *new_arr = realloc(data_array, size ? size : 1);
             if (new_arr == NULL) {
                 read_error->error_type = ERROR_OUT_OF_MEMORY;
                 goto error;
@@ -434,7 +426,8 @@ read_rows(stream *s,
     free(conv_funcs);
 
     if (data_array_allocated && data_allocated_rows != row_count) {
-        char *new_data = realloc(data_array, row_size * row_count);
+        size_t size = row_count * row_size;
+        char *new_data = realloc(data_array, size ? size : 1);
         if (new_data == NULL) {
             free(data_array);
             PyErr_NoMemory();
