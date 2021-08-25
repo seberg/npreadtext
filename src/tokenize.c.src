@@ -6,7 +6,6 @@
 #include <stdbool.h>
 #include <string.h>
 
-#include "typedefs.h"
 #include "stream.h"
 
 #include "tokenize.h"
@@ -61,7 +60,7 @@ copy_to_field_buffer_@type@(tokenizer_state *ts,
 
     if (NPY_UNLIKELY(ts->field_buffer_length < size)) {
         size = next_size(size);
-        char32_t *grown = PyMem_Realloc(ts->field_buffer, size * sizeof(char32_t));
+        Py_UCS4 *grown = PyMem_Realloc(ts->field_buffer, size * sizeof(Py_UCS4));
         if (grown == NULL) {
             PyErr_NoMemory();
             return -1;
@@ -70,9 +69,9 @@ copy_to_field_buffer_@type@(tokenizer_state *ts,
         ts->field_buffer = grown;
     }
 
-    char32_t *write_pos = ts->field_buffer + ts->field_buffer_pos;
+    Py_UCS4 *write_pos = ts->field_buffer + ts->field_buffer_pos;
     for (; chunk_start < chunk_end; chunk_start++, write_pos++) {
-        *write_pos = (char32_t)*chunk_start;
+        *write_pos = (Py_UCS4)*chunk_start;
     }
     *write_pos = '\0';  /* always ensure we end with NUL */
     ts->field_buffer_pos += chunk_length;
@@ -317,7 +316,7 @@ int
 tokenize(stream *s, tokenizer_state *ts, parser_config *const config)
 {
     assert(ts->fields_size >= 2);
-    assert(ts->field_buffer_length >= 2*sizeof(char32_t));
+    assert(ts->field_buffer_length >= 2*sizeof(Py_UCS4));
 
     int finished_reading_file = 0;
 
@@ -439,7 +438,7 @@ tokenizer_init(tokenizer_state *ts, parser_config *config)
     ts->pos = NULL;
     ts->end = NULL;
 
-    ts->field_buffer = PyMem_Malloc(32 * sizeof(char32_t));
+    ts->field_buffer = PyMem_Malloc(32 * sizeof(Py_UCS4));
     if (ts->field_buffer == NULL) {
         PyErr_NoMemory();
         return -1;

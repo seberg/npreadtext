@@ -4,7 +4,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "typedefs.h"
+
 
 typedef struct _parser_config {
 
@@ -13,7 +13,7 @@ typedef struct _parser_config {
      *  Typically ',', ' ', '\t', or '\0'.
      *  '\0' means each contiguous span of spaces is one delimiter.
      */
-    char32_t delimiter;
+    Py_UCS4 delimiter;
 
     /*
      *  Character used to quote fields.
@@ -21,7 +21,7 @@ typedef struct _parser_config {
      *  To disable the special handling of a quote character, set this to a
      *  value that doesn't occur in the input file (e.g. '\0').
      */
-    char32_t quote;
+    Py_UCS4 quote;
 
     /*
      *  Ignore whitespace at the beginning of a field (outside/before quotes).
@@ -54,7 +54,7 @@ typedef struct _parser_config {
      *  When encountered in a line and not inside quotes, all character
      *  from the comment character(s) to the end of the line are ignored.
      */
-    char32_t comment[2];
+    Py_UCS4 comment[2];
 
     /*
      *  A boolean value (0 or 1).  If 1, quoted fields may span
@@ -70,19 +70,19 @@ typedef struct _parser_config {
      *  The decimal point character.
      *  Most commonly '.', but ',' is sometimes used.
      */
-    char32_t decimal;
+    Py_UCS4 decimal;
 
     /*
      *  The character used to indicate the exponent in scientific notation.
      *  Typically 'E' or 'e', but 'D' (or 'd') are sometimes used (mainly in
      *  Fortran code).  When parsing, the case is ignored.
      */
-    char32_t sci;
+    Py_UCS4 sci;
 
     /*
      *  The imaginary unit character. Default is `j`.
      */
-    char32_t imaginary_unit;
+    Py_UCS4 imaginary_unit;
 
     /*
      *  If strict_num_fields is True, all rows in the file are expected

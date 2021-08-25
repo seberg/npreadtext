@@ -7,11 +7,9 @@
 #include <string.h>
 #include <ctype.h>
 
-#include "typedefs.h"
 #include "str_to.h"
 
 
-#include "typedefs.h"
 #define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
 #define NO_IMPORT_ARRAY
 #define PY_ARRAY_UNIQUE_SYMBOL npreadtext_ARRAY_API
@@ -36,9 +34,9 @@
  */
 static NPY_INLINE int64_t
 str_to_int64(
-        const char32_t *p_item, int64_t int_min, int64_t int_max, int *error)
+        const Py_UCS4 *p_item, int64_t int_min, int64_t int_max, int *error)
 {
-    const char32_t *p = (const char32_t *) p_item;
+    const Py_UCS4 *p = (const Py_UCS4 *) p_item;
     bool isneg = 0;
     int64_t number = 0;
     int d;
@@ -125,9 +123,9 @@ str_to_int64(
  *  If the conversion fails, *error is nonzero, and the return value is 0.
  */
 static NPY_INLINE uint64_t
-str_to_uint64(const char32_t *p_item, uint64_t uint_max, int *error)
+str_to_uint64(const Py_UCS4 *p_item, uint64_t uint_max, int *error)
 {
-    const char32_t *p = (const char32_t *) p_item;
+    const Py_UCS4 *p = (const Py_UCS4 *) p_item;
     uint64_t number = 0;
     int d;
 

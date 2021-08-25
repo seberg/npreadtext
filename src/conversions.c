@@ -1,4 +1,6 @@
 
+#include <Python.h>
+
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -7,14 +9,13 @@
 #include <stdbool.h>
 #include <complex.h>
 
-#include "typedefs.h"
-#include "char32utils.h"
 #include "conversions.h"
+
 
 double
 _Py_dg_strtod_modified(
-        const char32_t *s00, char32_t **se, int *error,
-        char32_t decimal, char32_t sci, bool skip_trailing);
+        const Py_UCS4 *s00, Py_UCS4 **se, int *error,
+        Py_UCS4 decimal, Py_UCS4 sci, bool skip_trailing);
 
 /*
  *  `item` must be the nul-terminated string that is to be
@@ -33,7 +34,7 @@ _Py_dg_strtod_modified(
  */
 int
 to_float(PyArray_Descr *descr,
-        const char32_t *str, const char32_t *end, char *dataptr,
+        const Py_UCS4 *str, const Py_UCS4 *end, char *dataptr,
         parser_config *pconfig)
 {
     if (*str == '\0') {
@@ -42,7 +43,7 @@ to_float(PyArray_Descr *descr,
     }
 
     int error;
-    char32_t *p_end;
+    Py_UCS4 *p_end;
 
     float val = (float)_Py_dg_strtod_modified(
             str, &p_end, &error, pconfig->decimal, pconfig->sci, true);
@@ -60,14 +61,14 @@ to_float(PyArray_Descr *descr,
 
 /* TODO: Used only for the type inference (which glances over the bugs though) */
 bool
-to_double_raw(const char32_t *str, double *res, char32_t decimal, char32_t sci)
+to_double_raw(const Py_UCS4 *str, double *res, Py_UCS4 decimal, Py_UCS4 sci)
 {
     if (*str == '\0') {
         return false;
     }
 
     int error;
-    char32_t *p_end;
+    Py_UCS4 *p_end;
     *res = _Py_dg_strtod_modified(
             str, &p_end, &error, decimal, sci, true);
     return (error == 0) && (!*p_end);
@@ -76,7 +77,7 @@ to_double_raw(const char32_t *str, double *res, char32_t decimal, char32_t sci)
 
 int
 to_double(PyArray_Descr *descr,
-        const char32_t *str, const char32_t *end, char *dataptr,
+        const Py_UCS4 *str, const Py_UCS4 *end, char *dataptr,
         parser_config *pconfig)
 {
     if (*str == '\0') {
@@ -85,7 +86,7 @@ to_double(PyArray_Descr *descr,
     }
 
     int error;
-    char32_t *p_end;
+    Py_UCS4 *p_end;
 
     double val = _Py_dg_strtod_modified(
             str, &p_end, &error, pconfig->decimal, pconfig->sci, true);
@@ -103,11 +104,11 @@ to_double(PyArray_Descr *descr,
 
 bool
 to_complex_raw(
-        const char32_t *item, double *p_real, double *p_imag,
-        char32_t sci, char32_t decimal, char32_t imaginary_unit,
+        const Py_UCS4 *item, double *p_real, double *p_imag,
+        Py_UCS4 sci, Py_UCS4 decimal, Py_UCS4 imaginary_unit,
         bool allow_parens)
 {
-    char32_t *p_end;
+    Py_UCS4 *p_end;
     int error;
     bool unmatched_opening_paren = false;
 
@@ -160,7 +161,7 @@ to_complex_raw(
 
 int
 to_cfloat(PyArray_Descr *descr,
-        const char32_t *str, const char32_t *end, char *dataptr,
+        const Py_UCS4 *str, const Py_UCS4 *end, char *dataptr,
         parser_config *pconfig)
 {
     if (*str == '\0') {
@@ -192,7 +193,7 @@ to_cfloat(PyArray_Descr *descr,
 
 int
 to_cdouble(PyArray_Descr *descr,
-        const char32_t *str, const char32_t *end, char *dataptr,
+        const Py_UCS4 *str, const Py_UCS4 *end, char *dataptr,
         parser_config *pconfig)
 {
     if (*str == '\0') {
@@ -226,10 +227,10 @@ to_cdouble(PyArray_Descr *descr,
  */
 int
 to_string(PyArray_Descr *descr,
-        const char32_t *str, const char32_t *end, char *dataptr,
+        const Py_UCS4 *str, const Py_UCS4 *end, char *dataptr,
         parser_config *unused)
 {
-    const char32_t* c = str;
+    const Py_UCS4* c = str;
     size_t length = descr->elsize;
 
     for (size_t i = 0; i < length; i++) {
@@ -248,7 +249,7 @@ to_string(PyArray_Descr *descr,
 
 int
 to_unicode(PyArray_Descr *descr,
-        const char32_t *str, const char32_t *end, char *dataptr,
+        const Py_UCS4 *str, const Py_UCS4 *end, char *dataptr,
         parser_config *unused)
 {
     size_t length = descr->elsize / 4;
@@ -274,7 +275,7 @@ to_unicode(PyArray_Descr *descr,
  * Convert functions helper for the generic converter.
  */
 static PyObject *
-call_converter_function(PyObject *func, const char32_t *str, size_t length)
+call_converter_function(PyObject *func, const Py_UCS4 *str, size_t length)
 {
     PyObject *s = PyUnicode_FromKindAndData(PyUnicode_4BYTE_KIND, str, length);
     if (s == NULL || func == NULL) {
@@ -303,7 +304,7 @@ call_converter_function(PyObject *func, const char32_t *str, size_t length)
 
 int
 to_generic_with_converter(PyArray_Descr *descr,
-        const char32_t *str, const char32_t *end, char *dataptr,
+        const Py_UCS4 *str, const Py_UCS4 *end, char *dataptr,
         parser_config *unused, PyObject *func)
 {
     /* Converts to unicode and calls custom converter (if set) */
@@ -335,7 +336,7 @@ to_generic_with_converter(PyArray_Descr *descr,
 
 int
 to_generic(PyArray_Descr *descr,
-        const char32_t *str, const char32_t *end, char *dataptr,
+        const Py_UCS4 *str, const Py_UCS4 *end, char *dataptr,
         parser_config *config)
 {
     return to_generic_with_converter(descr, str, end, dataptr, config, NULL);

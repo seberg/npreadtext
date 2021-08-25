@@ -2,6 +2,8 @@
 // str_to_double.c
 //
 
+#include <Python.h>
+
 #include <stdio.h>
 
 #include <ctype.h>
@@ -10,7 +12,6 @@
 #include <float.h>
 #include <stdbool.h>
 
-#include "typedefs.h"
 
 //#define isdigit(c) (((c) >= '0') && ((c) <= '9'))
 //#define isspace(c) (((c) == ' ') || ((c) == '\t'))
@@ -23,12 +24,12 @@ extern double pow10table[];
 
 double
 str_to_double(
-        const char32_t *str, char32_t **end, int *error,
-        char32_t decimal, char32_t sci, bool skip_trailing)
+        const Py_UCS4 *str, Py_UCS4 **end, int *error,
+        Py_UCS4 decimal, Py_UCS4 sci, bool skip_trailing)
 {
     double value;
     int negative, negative_exp;
-    char32_t *p = (char32_t *) str;
+    Py_UCS4 *p = (Py_UCS4 *) str;
     int n;
     bool has_leading_zero;
     int num_digits;
@@ -109,7 +110,7 @@ str_to_double(
     // Check for an exponent.
     n = 0;
     negative_exp = 0;
-    if ((char32_t) toupper(*p) == sci) {
+    if ((Py_UCS4) toupper(*p) == sci) {
         ++p;
 
         // Get the sign.

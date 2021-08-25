@@ -1,6 +1,7 @@
 
+#include <Python.h>
+
 #include <string.h>
-#include "typedefs.h"
 #include "str_to.h"
 #include "error_types.h"
 #include "conversions.h"
@@ -11,7 +12,7 @@
 #define DECLARE_TO_INT(intw, INT_MIN, INT_MAX)                                      \
     int                                                                             \
     to_##intw(PyArray_Descr *descr,                                                 \
-            const char32_t *str, const char32_t *end, char *dataptr,                \
+            const Py_UCS4 *str, const Py_UCS4 *end, char *dataptr,                  \
             parser_config *pconfig)                                                 \
     {                                                                               \
         intw##_t x;                                                                 \
@@ -21,8 +22,8 @@
         if (ierror) {                                                               \
             if (pconfig->allow_float_for_int) {                                     \
                 double fx;                                                          \
-                char32_t decimal = pconfig->decimal;                                \
-                char32_t sci = pconfig->sci;                                        \
+                Py_UCS4 decimal = pconfig->decimal;                                 \
+                Py_UCS4 sci = pconfig->sci;                                         \
                 if ((*str == '\0') || !to_double_raw(str, &fx, decimal, sci)) {     \
                     return -1;                                                      \
                 }                                                                   \
@@ -44,7 +45,7 @@
 #define DECLARE_TO_UINT(uintw, UINT_MAX)                                            \
     int                                                                             \
     to_##uintw(PyArray_Descr *descr,                                                \
-            const char32_t *str, const char32_t *end, char *dataptr,                \
+            const Py_UCS4 *str, const Py_UCS4 *end, char *dataptr,                  \
             parser_config *pconfig)                                                 \
     {                                                                               \
         uintw##_t x;                                                                \
@@ -54,8 +55,8 @@
         if (ierror) {                                                               \
             if (pconfig->allow_float_for_int) {                                     \
                 double fx;                                                          \
-                char32_t decimal = pconfig->decimal;                                \
-                char32_t sci = pconfig->sci;                                        \
+                Py_UCS4 decimal = pconfig->decimal;                                 \
+                Py_UCS4 sci = pconfig->sci;                                         \
                 if ((*str == '\0') || !to_double_raw(str, &fx, decimal, sci)) {     \
                     return -1;                                                      \
                 }                                                                   \

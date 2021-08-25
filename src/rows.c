@@ -19,7 +19,6 @@
 
 #include "stream.h"
 #include "tokenize.h"
-#include "char32utils.h"
 #include "conversions.h"
 #include "field_types.h"
 #include "rows.h"
@@ -73,55 +72,6 @@ max_token_len(
             j = usecols[i];
         }
         size_t m = fields[j+1].offset - fields[j].offset - 1;
-        if (m > maxlen) {
-            maxlen = m;
-        }
-    }
-    return maxlen;
-}
-
-
-// WIP...
-static size_t
-max_token_len_with_converters(
-        char32_t **tokens, int num_tokens, int32_t *usecols, PyObject **conv_funcs)
-{
-    size_t maxlen = 0;
-    size_t m;
-
-    for (int i = 0; i < num_tokens; ++i) {
-        size_t j;
-        if (usecols == NULL) {
-            j = i;
-        }
-        else {
-            j = usecols[i];
-        }
-
-        if (conv_funcs && conv_funcs[j]) {
-            // TODO: Moved converter calling function out of here.
-            PyObject *obj = NULL; //call_converter_function(conv_funcs[i], tokens[j]);
-            if (obj == NULL) {
-                fprintf(stderr, "CALL FAILED!\n");
-            }
-            // XXX check for obj == NULL!
-            PyObject *s = PyObject_Str(obj);
-            if (s == NULL) {
-                fprintf(stderr, "STR FAILED!\n");
-            }
-            Py_DECREF(obj);
-            // XXX check for s == NULL!
-            Py_ssize_t len = PySequence_Length(s);
-            if (len == -1) {
-                fprintf(stderr, "LEN FAILED!\n");
-            }
-            // XXX check for len == -1
-            Py_DECREF(s);
-            m = (size_t) len;
-        }
-        else {
-            m = strlen32(tokens[j]);
-        }
         if (m > maxlen) {
             maxlen = m;
         }
@@ -451,8 +401,8 @@ read_rows(stream *s,
             }
 
             int err = 0;
-            char32_t *str = ts.field_buffer + fields[k].offset;
-            char32_t *end = ts.field_buffer + fields[k + 1].offset - 1;
+            Py_UCS4 *str = ts.field_buffer + fields[k].offset;
+            Py_UCS4 *end = ts.field_buffer + fields[k + 1].offset - 1;
             if (conv_funcs[j] == NULL) {
                 if (field_types[f].set_from_ucs4(field_types[f].descr,
                         str, end, data_ptr, pconfig) < 0) {
