@@ -358,6 +358,7 @@ _readtext_from_file_object(PyObject *self, PyObject *args, PyObject *kwargs)
     }
 
     pc.delimiter = *delimiter;
+    pc.delimiter_is_whitespace = false;
     pc.comment[0] = comment[0];
     pc.comment[1] = comment[0] == '\0' ? '\0' : comment[1];
     pc.quote = *quote;
@@ -366,14 +367,16 @@ _readtext_from_file_object(PyObject *self, PyObject *args, PyObject *kwargs)
     pc.imaginary_unit = *imaginary_unit;
     pc.allow_float_for_int = true;
     pc.allow_embedded_newline = true;
-    pc.ignore_leading_spaces = false;
+    pc.ignore_leading_whitespace = false;
     pc.ignore_trailing_spaces = false;
     pc.ignore_blank_lines = true;
     pc.strict_num_fields = false;
 
-    if (pc.delimiter == ' ' || pc.delimiter == '\0') {
-        pc.delimiter = ' ';
-        pc.ignore_leading_spaces = true;
+    if (pc.delimiter == '\0') {
+        /* TODO: We can allow a '\0' delimiter; need to refine argparsing */
+        pc.delimiter_is_whitespace = true;
+        /* Ignore leading whitespace to match `string.split(None)` */
+        pc.ignore_leading_whitespace = true;
     }
 
     /*

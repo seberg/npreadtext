@@ -7,20 +7,23 @@
 #include "parser_config.h"
 
 
-/* Tokenization state machine states. */
-#define TOKENIZE_OUTSIDE_FIELD 8
-/* not in fields */
-#define TOKENIZE_INIT   (0 | TOKENIZE_OUTSIDE_FIELD)
-#define TOKENIZE_EAT_CRLF   (1 | TOKENIZE_OUTSIDE_FIELD)
-#define TOKENIZE_LINE_END   (2 | TOKENIZE_OUTSIDE_FIELD)
-#define TOKENIZE_GOTO_LINE_END (3 | TOKENIZE_OUTSIDE_FIELD)
-/* inside fields */
-#define TOKENIZE_CHECK_QUOTED 0
-#define TOKENIZE_UNQUOTED     1
-#define TOKENIZE_QUOTED       2
-#define TOKENIZE_QUOTED_CHECK_DOUBLE_QUOTE 3
-/* technically not necessarily inside a field, but it may be */
-#define TOKENIZE_CHECK_COMMENT 4
+typedef enum {
+    /* Initialization of fields */
+    TOKENIZE_INIT,
+    TOKENIZE_CHECK_QUOTED,
+    /* Main field parsing states */
+    TOKENIZE_UNQUOTED,
+    TOKENIZE_UNQUOTED_WHITESPACE,
+    TOKENIZE_QUOTED,
+    /* Handling of two character control sequences (except "\r\n") */
+    TOKENIZE_QUOTED_CHECK_DOUBLE_QUOTE,
+    TOKENIZE_CHECK_COMMENT,
+    /* Line end handling */
+    TOKENIZE_LINE_END,
+    TOKENIZE_EAT_CRLF,  /* "\r\n" support (carriage return, line feed) */
+    TOKENIZE_GOTO_LINE_END,
+} tokenizer_parsing_state;
+
 
 
 typedef struct {
@@ -30,7 +33,10 @@ typedef struct {
 
 
 typedef struct {
-    int state;
+    tokenizer_parsing_state state;
+    bool ignore_leading_whitespace;
+    /* Either TOKENIZE_UNQUOTED or TOKENIZE_UNQUOTED_WHITESPACE: */
+    tokenizer_parsing_state unquoted_state;
     int unicode_kind;
     int buf_state;
     size_t num_fields;
