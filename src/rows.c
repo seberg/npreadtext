@@ -26,10 +26,8 @@
 #include "error_types.h"
 #include "str_to.h"
 #include "str_to_int.h"
-#include "blocks.h"
 
-#define INITIAL_BLOCKS_TABLE_LENGTH 200
-#define ROWS_PER_BLOCK 500
+#define ROWS_PER_BLOCK 512
 
 
 //
@@ -133,6 +131,36 @@ max_token_len_with_converters(
 
 
 /*
+ * When resizing strings, we need to allocate a new area and then copy
+ * all strings with zero padding.  (Currently, this function uses calloc
+ * rather than manual zero padding.)
+ */
+static int
+expand_string_data_and_copy(
+        size_t old_itemsize, size_t new_itemsize,
+        size_t allocated_rows, size_t num_fields,
+        char **data_array, char **data_ptr)
+{
+    size_t new_num_elements = allocated_rows * num_fields;
+    char *new_data = calloc(new_num_elements, new_itemsize);
+    if (new_data == NULL) {
+        PyErr_NoMemory();
+        return -1;
+    }
+    char *orig_ptr = *data_array;
+    char *new_ptr = new_data;
+    while (orig_ptr < *data_ptr) {
+        memcpy(new_ptr, orig_ptr, old_itemsize);
+        new_ptr += new_itemsize;
+        orig_ptr += old_itemsize;
+    }
+    *data_array = new_data;
+    *data_ptr = new_ptr;
+    return 0;
+}
+
+
+/*
  *  Create the array of converter functions from the Python converters dict.
  */
 PyObject **
@@ -211,16 +239,15 @@ create_conv_funcs(
  *  read_error_type *read_error
  *      Information about errors detected in read_rows()
  */
-
-void *
+char *
 read_rows(stream *s,
         int *nrows, int num_field_types, field_type *field_types,
         parser_config *pconfig, int32_t *usecols, int num_usecols,
-        int skiplines, PyObject *converters, void *data_array,
+        int skiplines, PyObject *converters, char *data_array,
         int *num_cols, bool homogeneous, bool needs_init,
         read_error_type *read_error)
 {
-    char *data_ptr;
+    char *data_ptr = NULL;
     int current_num_fields;
     size_t row_size;
     size_t size;
@@ -228,9 +255,8 @@ read_rows(stream *s,
 
     bool track_string_size = false;
 
-    bool use_blocks = false;
-    blocks_data *blks = NULL;
-
+    bool data_array_allocated = data_array == NULL;
+    size_t data_allocated_rows = 0;
 
     int ts_result = 0;
     tokenizer_state ts;
@@ -265,7 +291,7 @@ read_rows(stream *s,
                          ((field_types[0].typecode == 'S') ||
                           (field_types[0].typecode == 'U')));
 
-    int row_count = 0;  /* number of rows actually processed */
+    size_t row_count = 0;  /* number of rows actually processed */
     while ((*nrows < 0 || row_count < *nrows) && ts_result == 0) {
         ts_result = tokenize(s, &ts, pconfig);
         if (ts_result < 0) {
@@ -279,7 +305,7 @@ read_rows(stream *s,
 
         int j, k;
 
-        if (NPY_UNLIKELY(actual_num_fields == -1)) {
+        if (NPY_UNLIKELY(data_ptr == NULL)) {
             // We've deferred some of the initialization tasks to here,
             // because we've now read the first line, and we definitively
             // know how many fields (i.e. columns) we will be processing.
@@ -320,9 +346,14 @@ read_rows(stream *s,
                 // In this case, it is assumed that *data_array is NULL
                 // or not initialized. I.e. the value passed in is ignored,
                 // and instead is initialized to the first block.
-                use_blocks = true;
-                blks = blocks_init(row_size, ROWS_PER_BLOCK, INITIAL_BLOCKS_TABLE_LENGTH);
-                if (blks == NULL) {
+                data_allocated_rows = ROWS_PER_BLOCK;
+                if (!needs_init) {
+                    data_array = malloc(data_allocated_rows * row_size);
+                }
+                else {
+                    data_array = calloc(data_allocated_rows * row_size, 1);
+                }
+                if (data_array == NULL) {
                     // XXX Check for other clean up that might be necessary.
                     read_error->error_type = ERROR_OUT_OF_MEMORY;
                     goto error;
@@ -342,12 +373,12 @@ read_rows(stream *s,
                         goto error;
                     }
                 }
-                data_ptr = data_array;
+                data_allocated_rows = *nrows;
             }
+            data_ptr = data_array;
         }
 
         if (track_string_size) {
-            size_t new_itemsize;
             // typecode must be 'S' or 'U'.
             // Find the maximum field length in the current line.
             if (converters != Py_None) {
@@ -355,16 +386,16 @@ read_rows(stream *s,
             }
             size_t maxlen = max_token_len(fields, actual_num_fields,
                     usecols, num_usecols);
-            new_itemsize = (field_types[0].typecode == 'S') ? maxlen : 4*maxlen;
+            size_t new_itemsize = (field_types[0].typecode == 'S') ? maxlen : 4*maxlen;
+
             if (new_itemsize > field_types[0].itemsize) {
-                // There is a field in this row whose length is
-                // more than any previously seen length.
-                if (use_blocks) {
-                    int status = blocks_uniform_resize(blks, actual_num_fields, new_itemsize);
-                    if (status != 0) {
-                        // XXX Handle this--probably out of memory.
-                    }
+                if (expand_string_data_and_copy(
+                        field_types[0].itemsize, new_itemsize,
+                        data_allocated_rows, actual_num_fields,
+                        &data_array, &data_ptr) < 0) {
+                    goto error;
                 }
+                row_size = new_itemsize * actual_num_fields;
                 field_types[0].itemsize = new_itemsize;
                 field_types[0].descr->elsize = new_itemsize;
             }
@@ -377,11 +408,21 @@ read_rows(stream *s,
             goto error;
         }
 
-        if (use_blocks) {
-            data_ptr = blocks_get_row_ptr(blks, row_count, needs_init);
-            if (data_ptr == NULL) {
+        if (data_allocated_rows == row_count) {
+            data_allocated_rows += ROWS_PER_BLOCK;
+            size_t new_rows = data_allocated_rows + ROWS_PER_BLOCK;
+            char *new_arr = realloc(data_array, new_rows * row_size);
+            if (new_arr == NULL) {
+                data_allocated_rows -= ROWS_PER_BLOCK;
                 read_error->error_type = ERROR_OUT_OF_MEMORY;
                 goto error;
+            }
+            if (new_arr != data_array) {
+                data_ptr = new_arr + data_allocated_rows * row_size;
+                data_array = new_arr;
+            }
+            if (needs_init) {
+                memset(data_ptr, '\0', ROWS_PER_BLOCK * row_size);
             }
         }
 
@@ -442,33 +483,33 @@ read_rows(stream *s,
         ++row_count;
     }
 
-    if (use_blocks) {
-        if (read_error->error_type == 0) {
-            // No error.
-            // Copy the blocks into a newly allocated contiguous array.
-            data_array = blocks_to_contiguous(blks, row_count);
+    tokenizer_clear(&ts);
+    free(conv_funcs);
+
+    if (data_array_allocated && data_allocated_rows != row_count) {
+        char *new_data = realloc(data_array, row_size * row_count);
+        if (new_data == NULL) {
+            free(data_array);
+            PyErr_NoMemory();
+            return NULL;
         }
-        blocks_destroy(blks);
+        data_array = new_data;
     }
 
     //stream_close(s, RESTORE_FINAL);
 
     *nrows = row_count;
 
-    /* TODO: Make sure no early return needs this cleanup (or use goto) */
-    tokenizer_clear(&ts);
-
     if (read_error->error_type) {
         return NULL;
     }
-    free(conv_funcs);
-    return (void *) data_array;
+    return data_array;
 
   error:
     free(conv_funcs);
     tokenizer_clear(&ts);
-    if (use_blocks) {
-        blocks_destroy(blks);
+    if (data_array_allocated) {
+        free(data_array);
     }
     return NULL;
 }
