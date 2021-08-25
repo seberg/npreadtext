@@ -3,8 +3,6 @@
 
 #include <stdint.h>
 
-#include "typedefs.h"
-
 
 #define RESTORE_NOT     0
 #define RESTORE_INITIAL 1

@@ -2,7 +2,7 @@
 #ifndef _TOKENIZE_H_
 #define _TOKENIZE_H_
 
-#include "typedefs.h"
+#include <Python.h>
 #include "stream.h"
 #include "parser_config.h"
 
@@ -52,7 +52,7 @@ typedef struct {
      */
     size_t field_buffer_length;
     size_t field_buffer_pos;
-    char32_t *field_buffer;
+    Py_UCS4 *field_buffer;
 
     /*
      * Fields, including information about the field being quoted.  This

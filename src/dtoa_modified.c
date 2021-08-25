@@ -132,8 +132,6 @@
 #include <stdbool.h>
 #include <ctype.h>
 
-#include "typedefs.h"
-
 /* if PY_NO_SHORT_FLOAT_REPR is defined, then don't even try to compile
    the following code */
 #ifndef PY_NO_SHORT_FLOAT_REPR
@@ -506,7 +504,7 @@ multadd(Bigint *b, int m, int a)       /* multiply by m and add a */
    NULL on failure. */
 
 static Bigint *
-s2b(const char32_t *s, int nd0, int nd, ULong y9)
+s2b(const Py_UCS4 *s, int nd0, int nd, ULong y9)
 {
     Bigint *b;
     int i, k;
@@ -1311,7 +1309,7 @@ sulp(U *x, BCinfo *bc)
      Returns 0 on success, -1 on failure (e.g., due to a failed malloc call). */
 
 static int
-bigcomp(U *rv, const char32_t *s0, BCinfo *bc)
+bigcomp(U *rv, const Py_UCS4 *s0, BCinfo *bc)
 {
     Bigint *b, *d;
     int b2, d2, dd, i, nd, nd0, odd, p2, p5;
@@ -1451,13 +1449,13 @@ _Py_dg_infinity(int sign)
 }
 
 double
-_Py_dg_strtod_modified(const char32_t *s00, char32_t **se, int *perror,
-                       char32_t decimal, char32_t sci, bool skip_trailing)
+_Py_dg_strtod_modified(const Py_UCS4 *s00, Py_UCS4 **se, int *perror,
+                       Py_UCS4 decimal, Py_UCS4 sci, bool skip_trailing)
 {
     int bb2, bb5, bbe, bd2, bd5, bs2, dsign, e, e1, error;
-    char32_t c;
+    Py_UCS4 c;
     int esign, i, j, k, lz, nd, nd0, odd, sign;
-    const char32_t *s, *s0, *s1;
+    const Py_UCS4 *s, *s0, *s1;
     double aadj, aadj1;
     U aadj2, adj, rv, rv0;
     ULong y, z, abs_exp;
@@ -1530,7 +1528,7 @@ _Py_dg_strtod_modified(const char32_t *s00, char32_t **se, int *perror,
        valid input must have at least one digit. */
     if (!ndigits && !lz) {
         if (se)
-            *se = (char32_t *)s00;
+            *se = (Py_UCS4 *)s00;
         goto parse_error;
     }
 
@@ -1538,7 +1536,7 @@ _Py_dg_strtod_modified(const char32_t *s00, char32_t **se, int *perror,
        computed with them, can safely fit in an int. */
     if (ndigits > MAX_DIGITS || fraclen > MAX_DIGITS) {
         if (se)
-            *se = (char32_t *)s00;
+            *se = (Py_UCS4 *)s00;
         goto parse_error;
     }
     nd = (int)ndigits;
@@ -1546,7 +1544,7 @@ _Py_dg_strtod_modified(const char32_t *s00, char32_t **se, int *perror,
 
     /* Parse exponent. */
     e = 0;
-    if ((char32_t) toupper(c) == sci) {
+    if ((Py_UCS4) toupper(c) == sci) {
         s00 = s;
         c = *++s;
 
@@ -1605,7 +1603,7 @@ _Py_dg_strtod_modified(const char32_t *s00, char32_t **se, int *perror,
 
     /* Finished parsing.  Set se to indicate how far we parsed */
     if (se) {
-        *se = (char32_t *)s;
+        *se = (Py_UCS4 *)s;
     }
 
     /* If all digits were zero, exit with return value +-0.0.  Otherwise,

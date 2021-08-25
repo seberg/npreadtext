@@ -6,13 +6,11 @@
 #include <stdlib.h>
 #include <stdint.h>
 
-#include "typedefs.h"
 #include "tokenize.h"
 #include "field_types.h"
 #include "analyze.h"
 #include "type_inference.h"
 #include "stream.h"
-#include "char32utils.h"
 
 
 typedef struct {
@@ -94,9 +92,9 @@ analyze(stream *s, parser_config *pconfig, int skiplines, int numrows,
     field_type *types = NULL;
     integer_range *ranges = NULL;
 
-    char32_t decimal = pconfig->decimal;
-    char32_t sci = pconfig->sci;
-    char32_t imaginary_unit = pconfig->imaginary_unit;
+    Py_UCS4 decimal = pconfig->decimal;
+    Py_UCS4 sci = pconfig->sci;
+    Py_UCS4 imaginary_unit = pconfig->imaginary_unit;
 
     for (; skiplines > 0; skiplines--) {
         ts.state = TOKENIZE_GOTO_LINE_END;
@@ -148,7 +146,7 @@ analyze(stream *s, parser_config *pconfig, int skiplines, int numrows,
             int64_t imin;
             uint64_t umax;
 
-            char32_t *token = ts.field_buffer + fields[k].offset;
+            Py_UCS4 *token = ts.field_buffer + fields[k].offset;
             typecode = classify_type(token, decimal, sci, imaginary_unit,
                                      &imin, &umax,
                                      types[k].typecode);

@@ -8,7 +8,6 @@
 #define NO_IMPORT_ARRAY
 #include "numpy/ndarraytypes.h"
 
-#include "typedefs.h"
 #include "parser_config.h"
 
 /*
@@ -29,7 +28,7 @@
  *       pconfig fully seems easier right now.
  */
 typedef int (set_from_ucs4_function)(
-        PyArray_Descr *descr, const char32_t *str, const char32_t *end,
+        PyArray_Descr *descr, const Py_UCS4 *str, const Py_UCS4 *end,
         char *dataptr, parser_config *pconfig);
 
 typedef struct _field_type {

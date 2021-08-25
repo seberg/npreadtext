@@ -1,11 +1,10 @@
 #ifndef _TYPE_INFERENCE_H_
 #define _TYPE_INFERENCE_H_
 
-#include "typedefs.h"
 
 char
-classify_type(char32_t *field,
-        char32_t decimal, char32_t sci, char32_t imaginary_unit,
+classify_type(Py_UCS4 *field,
+        Py_UCS4 decimal, Py_UCS4 sci, Py_UCS4 imaginary_unit,
         int64_t *i, uint64_t *u, char prev_type);
 
 void
