@@ -61,7 +61,7 @@ compute_row_size(
 
 static size_t
 max_token_len(
-        field_info *fields, int num_tokens, int32_t *usecols, int num_usecols)
+        field_info *fields, int num_tokens, int32_t *usecols)
 {
     size_t maxlen = 0;
     for (int i = 0; i < num_tokens; ++i) {
@@ -84,8 +84,7 @@ max_token_len(
 // WIP...
 static size_t
 max_token_len_with_converters(
-        char32_t **tokens, int num_tokens, int32_t *usecols,
-        int num_usecols, PyObject **conv_funcs)
+        char32_t **tokens, int num_tokens, int32_t *usecols, PyObject **conv_funcs)
 {
     size_t maxlen = 0;
     size_t m;
@@ -383,8 +382,7 @@ read_rows(stream *s,
             if (converters != Py_None) {
                 // XXX Not handled yet.
             }
-            size_t maxlen = max_token_len(fields, actual_num_fields,
-                    usecols, num_usecols);
+            size_t maxlen = max_token_len(fields, actual_num_fields, usecols);
             size_t new_itemsize = (field_types[0].typecode == 'S') ? maxlen : 4*maxlen;
 
             if (new_itemsize > field_types[0].itemsize) {
@@ -431,7 +429,7 @@ read_rows(stream *s,
             }
         }
 
-        for (int j = 0; j < num_usecols; ++j) {
+        for (int j = 0; j < actual_num_fields; ++j) {
             int f = homogeneous ? 0 : j;
             // k is the column index of the field in the file.
             int k;
@@ -450,13 +448,6 @@ read_rows(stream *s,
                     read_error->column_index = usecols[j];
                     goto error;
                 }
-            }
-
-            if (NPY_UNLIKELY(k >= current_num_fields)) {
-                PyErr_SetString(PyExc_NotImplementedError,
-                        "internal error, k >= current_num_fields should not "
-                        "be possible (and is note implemented)!");
-                goto error;
             }
 
             int err = 0;
