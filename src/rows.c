@@ -27,13 +27,14 @@
 #include "str_to.h"
 #include "str_to_int.h"
 
+/* Minimum number of rows to grow, must be a power of two */
 #define ROWS_PER_BLOCK 512
 
 
 //
 // If num_field_types is not 1, actual_num_fields must equal num_field_types.
 //
-size_t
+static size_t
 compute_row_size(
         int actual_num_fields, int num_field_types, field_type *field_types)
 {
@@ -58,7 +59,7 @@ compute_row_size(
  *  Find the length of the longest token.
  */
 
-size_t
+static size_t
 max_token_len(
         field_info *fields, int num_tokens, int32_t *usecols, int num_usecols)
 {
@@ -81,7 +82,7 @@ max_token_len(
 
 
 // WIP...
-size_t
+static size_t
 max_token_len_with_converters(
         char32_t **tokens, int num_tokens, int32_t *usecols,
         int num_usecols, PyObject **conv_funcs)
@@ -303,8 +304,6 @@ read_rows(stream *s,
             continue;  /* Ignore empty line */
         }
 
-        int j, k;
-
         if (NPY_UNLIKELY(data_ptr == NULL)) {
             // We've deferred some of the initialization tasks to here,
             // because we've now read the first line, and we definitively
@@ -408,27 +407,34 @@ read_rows(stream *s,
             goto error;
         }
 
-        if (data_allocated_rows == row_count) {
-            data_allocated_rows += ROWS_PER_BLOCK;
-            size_t new_rows = data_allocated_rows + ROWS_PER_BLOCK;
+        if (NPY_UNLIKELY(data_allocated_rows == row_count)) {
+            /*
+             * Grow by ~25% and rounded up to the next ROWS_PER_BLOCK
+             * NOTE: This is based on very crude timings and could be refined!
+             */
+            size_t growth = (data_allocated_rows >> 2) + ROWS_PER_BLOCK;
+            growth &= ~(size_t)(ROWS_PER_BLOCK-1);
+            size_t new_rows = data_allocated_rows + growth;
+
             char *new_arr = realloc(data_array, new_rows * row_size);
             if (new_arr == NULL) {
-                data_allocated_rows -= ROWS_PER_BLOCK;
                 read_error->error_type = ERROR_OUT_OF_MEMORY;
                 goto error;
             }
             if (new_arr != data_array) {
-                data_ptr = new_arr + data_allocated_rows * row_size;
                 data_array = new_arr;
+                data_ptr = new_arr + data_allocated_rows * row_size;
             }
+            data_allocated_rows = new_rows;
             if (needs_init) {
-                memset(data_ptr, '\0', ROWS_PER_BLOCK * row_size);
+                memset(data_ptr, '\0', growth * row_size);
             }
         }
 
         for (int j = 0; j < num_usecols; ++j) {
             int f = homogeneous ? 0 : j;
             // k is the column index of the field in the file.
+            int k;
             if (usecols == NULL) {
                 k = j;
             }
