@@ -19,14 +19,17 @@ def _loadtxt(*args, **kwds):
         raise ValueError(f'Illegal value of ndmin keyword: {ndmin}')
 
     comment = kwds.pop('comments', None)
+    # Type conversions for Py3 convenience
     if comment is None:
         comment = '#'
-    if isinstance(comment, bytes):
-        comment = comment.decode('latin1')
+    else:
+        if isinstance(comment, (str, bytes)):
+            comment = [comment]
+        comment = [x.decode('latin1') if type(x) is bytes else x for x in comment]
 
     try:
         arr = read(*args, delimiter=delimiter, dtype=dtype,
-                   comment=comment, **kwds)
+                   comment=comment, quote='', **kwds)
     except RuntimeError as exc:
         raise ValueError(exc.args) from None
 

@@ -5,7 +5,7 @@ import types
 from pathlib import Path
 import operator
 import numpy as np
-from ._filegen import FileGen
+from ._filegen import FileGen, WrapFileLikeStrippingComments
 from . import _flatten_dtype
 from ._readtextmodule import _readtext_from_file_object
 
@@ -34,9 +34,11 @@ def read(file, *, delimiter=',', comment='#', quote='"',
     delimiter : str, optional
         Field delimiter of the fields in line of the file.
         Default is a comma, ','.
-    comment : str, optional
+    comment : str or sequence of str, optional
         Character that begins a comment.  All text from the comment
         character to the end of the line is ignored.
+        Multiple comments or multiple-character comment strings are supported,
+        but may be slower and `quote` must be empty if used.
     quote : str, optional
         Character that is used to quote string fields. Default is '"'
         (a double quote).
@@ -100,10 +102,12 @@ def read(file, *, delimiter=',', comment='#', quote='"',
     array([(1. , 10, b'alpha'), (2.3, 25, b'beta'), (4.5, 16, b'gamma')],
           dtype=[('f0', '<f8'), ('f1', 'u1'), ('f2', 'S5')])
     """
-    codec = None
-    if encoding is not None:
-        # This will raise a LookupError if the encoding is unknown.
-        codec = codecs.lookup(encoding)
+    if encoding is None:
+        import locale
+        encoding = locale.getpreferredencoding()
+
+    # This will raise a LookupError if the encoding is unknown.
+    codecs.lookup(encoding)
 
     if dtype is not None and not isinstance(dtype, np.dtype):
         dtype = np.dtype(dtype)
@@ -150,8 +154,39 @@ def read(file, *, delimiter=',', comment='#', quote='"',
     if ndmin not in [None, 0, 1, 2]:
         raise ValueError(f'ndmin must be None, 0, 1, or 2; got {ndmin}')
 
-    if len(comment) > 2:
-        raise ValueError('len(comment) must not be greater than 2.')
+    if not isinstance(comment, str):
+        # assume comments are a sequence of strings
+        comments = tuple(comment)
+        comment = ''
+        # If there is only one comment, and that comment has one character,
+        # the normal parsing can deal with it just fine.
+        if len(comments) == 1:
+            if isinstance(comments[0], str) and len(comments[0]) == 1:
+                comment = comments[0]
+                comments = None
+    elif len(comment) > 1:
+        comments = (comment,)
+        comment = ''
+    else:
+        comments = None
+
+    # comment is now either a 1 or 0 character string or a tuple:
+    if comments is not None:
+        assert comment == ''
+        # Note: An earlier version support two character comments (and could
+        #       have been extended to multiple characters, we assume this is
+        #       rare enough to not optimize for.
+        if quote != "":
+            raise ValueError(
+                "when multiple comments or a multi-character comment is given, "
+                "quotes are not supported.  In this case the quote character "
+                "must be set to the empty string: `quote=''`.")
+
+        preprocess = lambda f: WrapFileLikeStrippingComments(f, encoding, comments)
+    else:
+        # No proprocessing necessary
+        assert comments is None
+        preprocess = lambda x: x
 
     if len(imaginary_unit) != 1:
         raise ValueError('len(imaginary_unit) must be 1.')
@@ -185,6 +220,7 @@ def read(file, *, delimiter=',', comment='#', quote='"',
     if isinstance(file, str):
         f = np.lib._datasource.open(file, 'rt', encoding=encoding)
         try:
+            f = preprocess(f)
             enc = encoding.encode('ascii') if encoding is not None else None
             arr = _readtext_from_file_object(f, delimiter=delimiter,
                                              comment=comment, quote=quote,
@@ -200,6 +236,7 @@ def read(file, *, delimiter=',', comment='#', quote='"',
             f.close()
     elif isinstance(file, Path):
         with open(file, encoding=encoding) as f:
+            f = preprocess(f)
             enc = encoding.encode('ascii') if encoding is not None else None
             arr = _readtext_from_file_object(f, delimiter=delimiter,
                                              comment=comment, quote=quote,
@@ -217,7 +254,7 @@ def read(file, *, delimiter=',', comment='#', quote='"',
             raise ValueError('dtype must be given when reading from '
                              'a generator')
         # Wrap the generator in a class with a readline() method.
-        fg = FileGen(file)
+        fg = preprocess(FileGen(file))
         enc = encoding.encode('ascii') if encoding is not None else None
         arr = _readtext_from_file_object(fg, delimiter=delimiter,
                                          comment=comment, quote=quote,
@@ -231,6 +268,7 @@ def read(file, *, delimiter=',', comment='#', quote='"',
                                          encoding=enc)
     else:
         # Assume file is a file object.
+        file = preprocess(file)
         enc = encoding.encode('ascii') if encoding is not None else None
         arr = _readtext_from_file_object(file, delimiter=delimiter,
                                          comment=comment,
