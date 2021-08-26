@@ -53,44 +53,6 @@ raise_analyze_exception(int nrows, char *filename)
     }
 }
 
-static void
-raise_read_exception(read_error_type *read_error)
-{
-    if (read_error->error_type == 0) {
-        // No error.
-        return;
-    }
-    if (read_error->error_type == ERROR_OUT_OF_MEMORY) {
-        PyErr_Format(PyExc_MemoryError, "out of memory while reading file");
-    }
-    else if (read_error->error_type == ERROR_INVALID_COLUMN_INDEX) {
-        PyErr_Format(PyExc_RuntimeError, "line %d: invalid column index %d",
-                     read_error->line_number, read_error->column_index);
-    }
-    else if (read_error->error_type == ERROR_BAD_FIELD) {
-        PyErr_Format(PyExc_RuntimeError,
-                     "line %d, field %d: bad %S value",
-                     read_error->line_number, read_error->field_number + 1,
-                     read_error->descr);
-    }
-    else if (read_error->error_type == ERROR_CHANGED_NUMBER_OF_FIELDS) {
-        PyObject *exc = LOADTXT_COMPATIBILITY ? PyExc_ValueError : PyExc_RuntimeError;
-        PyErr_Format(exc,
-                     "Number of fields changed, line %d",
-                     read_error->line_number);
-    }
-    else if (read_error->error_type == ERROR_CONVERTER_FAILED) {
-        PyErr_Format(PyExc_RuntimeError,
-                     "converter failed; line %d, field %d",
-                     read_error->line_number, read_error->field_number + 1);
-    }
-    else {
-        // Some other error type
-        PyErr_Format(PyExc_RuntimeError, "line %d: error type %d",
-                     read_error->line_number, read_error->error_type);
-    }
-}
-
 
 //
 // `usecols` must point to a Python object that is Py_None or a 1-d contiguous
@@ -206,31 +168,19 @@ _readtext_from_stream(stream *s, char *filename, parser_config *pc,
         Py_INCREF(out_dtype);
         arr = PyArray_SimpleNewFromDescr(ndim, shape, out_dtype);
         if (!arr) {
-            free(ft);
-            return NULL;
+            goto finish;
         }
-        read_error_type read_error;
         int num_rows = nrows;
         void *result = read_rows(s,
                 &num_rows, num_fields, ft, pc, cols, ncols, skiprows,
                 converters, PyArray_DATA(arr), &num_cols, homogeneous,
-                needs_init,  /* unused, data is allocated and initialized */
-                &read_error);
-        if (result == NULL && PyErr_Occurred()) {
-            return NULL;
-        }
-        if (read_error.error_type != 0) {
-            /* TODO: Has to use the goto finish here, probably. */
-            free(ft);
-            Py_DECREF(arr);
-            raise_read_exception(&read_error);
-            return NULL;
+                needs_init /* unused, data is allocated and initialized */);
+        if (result == NULL) {
+            goto finish;
         }
     }
     else {
         // A dtype was given.
-        read_error_type read_error;
-        read_error.error_type = 0;
         int num_cols;
         int ndim;
         int num_rows = nrows;
@@ -245,29 +195,14 @@ _readtext_from_stream(stream *s, char *filename, parser_config *pc,
              */
             ft[0].descr = PyArray_DescrNewFromType(ft[0].descr->type_num);
             if (ft[0].descr == NULL) {
-                return NULL;
+                goto finish;
             }
         }
         void *result = read_rows(s, &num_rows, num_fields, ft, pc,
                                  cols, ncols, skiprows, converters,
-                                 NULL, &num_cols, homogeneous, needs_init,
-                                 &read_error);
-        if (result == NULL && PyErr_Occurred()) {
-            return NULL;
-        }
-        if (read_error.error_type != 0) {
-            /* TODO: Has to use the goto finish here, probably. */
-            /*
-             * TODO: This is wrong if the result contains references, we
-             *       need to decref those then.  The easiest would be to
-             *       make the block manager actually use an array directly
-             *       maybe (that way we have an array to delete).
-             *       This is also a problem if the array allocation below fails
-             *       but that is very unlikely at least...
-             */
-            free(ft);
-            raise_read_exception(&read_error);
-            return NULL;
+                                 NULL, &num_cols, homogeneous, needs_init);
+        if (result == NULL) {
+            goto finish;
         }
 
         shape[0] = num_rows;

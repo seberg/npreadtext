@@ -20,7 +20,6 @@
 #include "conversions.h"
 #include "field_types.h"
 #include "rows.h"
-#include "error_types.h"
 #include "str_to.h"
 #include "str_to_int.h"
 
@@ -114,13 +113,13 @@ expand_string_data_and_copy(
 PyObject **
 create_conv_funcs(
         PyObject *converters, int32_t *usecols, int num_usecols,
-        int current_num_fields, read_error_type *read_error)
+        int current_num_fields)
 {
     PyObject **conv_funcs = NULL;
 
     conv_funcs = calloc(num_usecols, sizeof(PyObject *));
     if (conv_funcs == NULL) {
-        read_error->error_type = ERROR_OUT_OF_MEMORY;
+        PyErr_NoMemory();
         return NULL;
     }
     for (int j = 0; j < num_usecols; ++j) {
@@ -184,16 +183,13 @@ create_conv_funcs(
  *  void *data_array
  *  int *num_cols
  *      The actual number of columns (or fields) of the data being returned.
- *  read_error_type *read_error
- *      Information about errors detected in read_rows()
  */
 char *
 read_rows(stream *s,
         int *nrows, int num_field_types, field_type *field_types,
         parser_config *pconfig, int32_t *usecols, int num_usecols,
         int skiplines, PyObject *converters, char *data_array,
-        int *num_cols, bool homogeneous, bool needs_init,
-        read_error_type *read_error)
+        int *num_cols, bool homogeneous, bool needs_init)
 {
     char *data_ptr = NULL;
     int current_num_fields;
@@ -212,8 +208,6 @@ read_rows(stream *s,
     }
 
     int actual_num_fields = -1;
-
-    read_error->error_type = 0;
 
     for (; skiplines > 0; skiplines--) {
         ts.state = TOKENIZE_GOTO_LINE_END;
@@ -272,8 +266,8 @@ read_rows(stream *s,
             }
 
             if (converters != Py_None) {
-                conv_funcs = create_conv_funcs(converters, usecols, num_usecols,
-                                               current_num_fields, read_error);
+                conv_funcs = create_conv_funcs(
+                        converters, usecols, num_usecols, current_num_fields);
             }
             else {
                 conv_funcs = calloc(num_usecols, sizeof(PyObject *));
@@ -305,8 +299,7 @@ read_rows(stream *s,
                     data_array = calloc(size ? size : 1, 1);
                 }
                 if (data_array == NULL) {
-                    // XXX Check for other clean up that might be necessary.
-                    read_error->error_type = ERROR_OUT_OF_MEMORY;
+                    PyErr_NoMemory();
                     goto error;
                 }
             }
@@ -340,9 +333,10 @@ read_rows(stream *s,
         }
 
         if (!usecols && (actual_num_fields != current_num_fields)) {
-            read_error->error_type = ERROR_CHANGED_NUMBER_OF_FIELDS;
-            read_error->line_number = row_count + 1;
-            read_error->column_index = current_num_fields;
+            PyErr_Format(PyExc_ValueError,
+                    "the number of columns changed from %d to %d at row %zu; "
+                    "use `usecols` to select a subset and avoid this error",
+                    actual_num_fields, current_num_fields, row_count+1);
             goto error;
         }
 
@@ -358,7 +352,7 @@ read_rows(stream *s,
             size_t size = new_rows * row_size;
             char *new_arr = realloc(data_array, size ? size : 1);
             if (new_arr == NULL) {
-                read_error->error_type = ERROR_OUT_OF_MEMORY;
+                PyErr_NoMemory();
                 goto error;
             }
             if (new_arr != data_array) {
@@ -385,36 +379,46 @@ read_rows(stream *s,
                     k += current_num_fields;
                 }
                 if (NPY_UNLIKELY((k < 0) || (k >= current_num_fields))) {
-                    read_error->error_type = ERROR_INVALID_COLUMN_INDEX;
-                    read_error->line_number = row_count - 1;
-                    read_error->column_index = usecols[j];
+                    PyErr_Format(PyExc_ValueError,
+                            "invalid column index %d at row %zu with %d "
+                            "columns",
+                            usecols[j], current_num_fields, row_count+1);
                     goto error;
                 }
             }
 
-            int err = 0;
+            bool err = 0;
             Py_UCS4 *str = ts.field_buffer + fields[k].offset;
             Py_UCS4 *end = ts.field_buffer + fields[k + 1].offset - 1;
             if (conv_funcs[j] == NULL) {
                 if (field_types[f].set_from_ucs4(field_types[f].descr,
                         str, end, data_ptr, pconfig) < 0) {
-                    err = ERROR_BAD_FIELD;
+                    err = true;
                 }
             }
             else {
                 if (to_generic_with_converter(field_types[f].descr,
                         str, end, data_ptr, pconfig, conv_funcs[j]) < 0) {
-                    err = ERROR_BAD_FIELD;
+                    err = true;
                 }
             }
             data_ptr += field_types[f].itemsize;
 
             if (NPY_UNLIKELY(err)) {
-                read_error->error_type = err;
-                read_error->line_number = row_count - 1;
-                read_error->field_number = k;
-                read_error->char_position = -1; // FIXME
-                read_error->descr = field_types[f].descr;
+                /* TODO: We could also chain an inner exception... */
+                if (!PyErr_Occurred()) {
+                    size_t length = end - str;
+                    PyObject *string = PyUnicode_FromKindAndData(
+                            PyUnicode_4BYTE_KIND, str, length);
+                    if (string == NULL) {
+                        goto error;
+                    }
+                    PyErr_Format(PyExc_ValueError,
+                            "could not convert string %.100R to %S at "
+                            "row %zu, column %d.",
+                            string, field_types[f].descr, row_count, k+1);
+                    Py_DECREF(string);
+                }
                 goto error;
             }
         }
@@ -425,7 +429,12 @@ read_rows(stream *s,
     tokenizer_clear(&ts);
     free(conv_funcs);
 
-    if (data_array_allocated && data_allocated_rows != row_count) {
+    /*
+     * Note that if there is no data, `data_array` may still be NULL and
+     * row_count is 0.  In that case, always realloc just in case.
+     */
+    if (data_array_allocated && (
+            data_allocated_rows != row_count || row_count == 0)) {
         size_t size = row_count * row_size;
         char *new_data = realloc(data_array, size ? size : 1);
         if (new_data == NULL) {
@@ -440,9 +449,6 @@ read_rows(stream *s,
 
     *nrows = row_count;
 
-    if (read_error->error_type) {
-        return NULL;
-    }
     return data_array;
 
   error:
