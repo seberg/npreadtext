@@ -54,7 +54,7 @@ typedef struct _parser_config {
      *  When encountered in a line and not inside quotes, all character
      *  from the comment character(s) to the end of the line are ignored.
      */
-    Py_UCS4 comment[2];
+    Py_UCS4 comment;
 
     /*
      *  A boolean value (0 or 1).  If 1, quoted fields may span

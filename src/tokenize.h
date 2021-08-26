@@ -17,7 +17,6 @@ typedef enum {
     TOKENIZE_QUOTED,
     /* Handling of two character control sequences (except "\r\n") */
     TOKENIZE_QUOTED_CHECK_DOUBLE_QUOTE,
-    TOKENIZE_CHECK_COMMENT,
     /* Line end handling */
     TOKENIZE_LINE_END,
     TOKENIZE_EAT_CRLF,  /* "\r\n" support (carriage return, line feed) */

@@ -159,15 +159,9 @@ tokenizer_core_@type@(tokenizer_state *ts, parser_config *const config)
                     ts->state = TOKENIZE_INIT;
                     break;
                 }
-                else if (*pos == config->comment[0]) {
-                    if (config->comment[1] != '\0') {
-                        ts->state = TOKENIZE_CHECK_COMMENT;
-                        break;
-                    }
-                    else {
-                        ts->state = TOKENIZE_GOTO_LINE_END;
-                        break;
-                    }
+                else if (*pos == config->comment) {
+                    ts->state = TOKENIZE_GOTO_LINE_END;
+                    break;
                 }
             }
             if (copy_to_field_buffer_@type@(ts, chunk_start, pos) < 0) {
@@ -192,15 +186,9 @@ tokenizer_core_@type@(tokenizer_state *ts, parser_config *const config)
                     ts->state = TOKENIZE_INIT;
                     break;
                 }
-                else if (*pos == config->comment[0]) {
-                    if (config->comment[1] != '\0') {
-                        ts->state = TOKENIZE_CHECK_COMMENT;
-                        break;
-                    }
-                    else {
-                        ts->state = TOKENIZE_GOTO_LINE_END;
-                        break;
-                    }
+                else if (*pos == config->comment) {
+                    ts->state = TOKENIZE_GOTO_LINE_END;
+                    break;
                 }
             }
             if (copy_to_field_buffer_@type@(ts, chunk_start, pos) < 0) {
@@ -234,22 +222,6 @@ tokenizer_core_@type@(tokenizer_state *ts, parser_config *const config)
                 return -1;
             }
             pos++;
-            break;
-
-        case TOKENIZE_CHECK_COMMENT:
-            if (*pos == config->comment[1]) {
-                ts->state = TOKENIZE_GOTO_LINE_END;
-                pos++;
-            }
-            else {
-                /* Not a comment, must be tokenizing unquoted now */
-                ts->state = TOKENIZE_UNQUOTED;
-                /* Copy comment as a chunk to the current field */
-                if (copy_to_field_buffer_Py_UCS4(ts,
-                        config->comment, config->comment+1) < 0) {
-                    return -1;
-                }
-            }
             break;
 
         case TOKENIZE_QUOTED_CHECK_DOUBLE_QUOTE:
