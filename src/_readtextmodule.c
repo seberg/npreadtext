@@ -253,6 +253,25 @@ _readtext_from_stream(stream *s, char *filename, parser_config *pc,
 }
 
 
+static int
+parse_control_character(PyObject *obj, Py_UCS4 *character)
+{
+    if (!PyUnicode_Check(obj) || PyUnicode_GetLength(obj) > 1) {
+        PyErr_Format(PyExc_TypeError,
+                "Control character must be a single unicode character or "
+                "empty unicode string; but got: %.100R", obj);
+        return 0;
+    }
+    if (PyUnicode_GET_LENGTH(obj) == 0) {
+        /* TODO: This sets it to a non-existing character, could use NUL */
+        *character = (Py_UCS4)-1;
+        return 1;
+    }
+    *character = PyUnicode_READ_CHAR(obj, 0);
+    return 1;
+}
+
+
 static PyObject *
 _readtext_from_file_object(PyObject *self, PyObject *args, PyObject *kwargs)
 {
@@ -263,50 +282,50 @@ _readtext_from_file_object(PyObject *self, PyObject *args, PyObject *kwargs)
                              "dtype", "dtypes",
                              "encoding", NULL};
     PyObject *file;
-    char *delimiter = ",";
-    char *comment = "#";
-    char *quote = "\"";
-    char *decimal = ".";
-    char *sci = "E";
-    char *imaginary_unit = "j";
-    int skiprows;
-    int max_rows;
-    PyObject *usecols;
-    PyObject *converters;
+    int skiprows = 0;
+    int max_rows = -1;
+    PyObject *usecols = Py_None;
+    PyObject *converters = Py_None;
 
-    PyObject *dtype;
-    PyObject *dtypes_obj = NULL;
-    PyObject *encoding;
+    PyObject *dtype = Py_None;
+    PyObject *dtypes_obj = Py_None;
+    PyObject *encoding = Py_None;
 
     PyArray_Descr **dtypes = NULL;
 
     parser_config pc;
-    PyObject *arr = NULL;
-    int num_dtype_fields;
-
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O|$ssssssOiiOOOO", kwlist,
-                                     &file, &delimiter, &comment, &quote,
-                                     &decimal, &sci, &imaginary_unit, &usecols, &skiprows,
-                                     &max_rows, &converters,
-                                     &dtype, &dtypes_obj, &encoding)) {
-        return NULL;
-    }
-
-    pc.delimiter = *delimiter;
-    pc.delimiter_is_whitespace = false;
-    pc.comment = *comment;
-    pc.quote = *quote;
-    pc.decimal = *decimal;
-    pc.sci = *sci;
-    pc.imaginary_unit = *imaginary_unit;
+    pc.delimiter = ',';
+    pc.comment = '#';
+    pc.quote = '"';
+    pc.decimal = '.';
+    pc.sci = 'E';
+    pc.imaginary_unit = 'j';
     pc.allow_float_for_int = true;
     pc.allow_embedded_newline = true;
+    pc.delimiter_is_whitespace = false;
     pc.ignore_leading_whitespace = false;
     pc.ignore_trailing_spaces = false;
     pc.ignore_blank_lines = true;
     pc.strict_num_fields = false;
 
-    if (pc.delimiter == '\0') {
+    PyObject *arr = NULL;
+    int num_dtype_fields;
+
+    if (!PyArg_ParseTupleAndKeywords(
+            args, kwargs, "O|$O&O&O&O&O&O&OiiOOOO", kwlist,
+            &file,
+            &parse_control_character, &pc.delimiter,
+            &parse_control_character, &pc.comment,
+            &parse_control_character, &pc.quote,
+            &parse_control_character, &pc.decimal,
+            &parse_control_character, &pc.sci,
+            &parse_control_character, &pc.imaginary_unit,
+            &usecols, &skiprows, &max_rows, &converters,
+            &dtype, &dtypes_obj, &encoding)) {
+        return NULL;
+    }
+
+    if (pc.delimiter == (Py_UCS4)-1) {
         /* TODO: We can allow a '\0' delimiter; need to refine argparsing */
         pc.delimiter_is_whitespace = true;
         /* Ignore leading whitespace to match `string.split(None)` */
