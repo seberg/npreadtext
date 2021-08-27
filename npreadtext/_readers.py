@@ -247,7 +247,6 @@ def read(file, *, delimiter=',', comment='#', quote='"',
                                              max_rows=max_rows,
                                              converters=converters,
                                              dtype=dtype, dtypes=dtypes,
-                                             codes=codes, sizes=sizes,
                                              encoding=enc)
     elif isinstance(file, types.GeneratorType):
         if dtype is None:

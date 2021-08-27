@@ -72,7 +72,7 @@ raise_analyze_exception(int nrows, char *filename)
 //
 static PyObject *
 _readtext_from_stream(stream *s, char *filename, parser_config *pc,
-                      PyObject *usecols, int skiprows, int max_rows,
+                      PyObject *usecols, Py_ssize_t skiprows, Py_ssize_t max_rows,
                       PyObject *converters,
                       PyObject *dtype, PyArray_Descr **dtypes,
                       int num_dtype_fields)
@@ -170,7 +170,7 @@ _readtext_from_stream(stream *s, char *filename, parser_config *pc,
         if (!arr) {
             goto finish;
         }
-        int num_rows = nrows;
+        Py_ssize_t num_rows = nrows;
         void *result = read_rows(s,
                 &num_rows, num_fields, ft, pc, cols, ncols, skiprows,
                 converters, PyArray_DATA(arr), &num_cols, homogeneous,
@@ -183,7 +183,7 @@ _readtext_from_stream(stream *s, char *filename, parser_config *pc,
         // A dtype was given.
         int num_cols;
         int ndim;
-        int num_rows = nrows;
+        Py_ssize_t num_rows = nrows;
         bool track_string_size = ((num_dtype_fields == 1) &&
                                   (ft[0].itemsize == 0) &&
                                   ((ft[0].typecode == 'S') ||
@@ -282,8 +282,8 @@ _readtext_from_file_object(PyObject *self, PyObject *args, PyObject *kwargs)
                              "dtype", "dtypes",
                              "encoding", NULL};
     PyObject *file;
-    int skiprows = 0;
-    int max_rows = -1;
+    Py_ssize_t skiprows = 0;
+    Py_ssize_t max_rows = -1;
     PyObject *usecols = Py_None;
     PyObject *converters = Py_None;
 
@@ -312,7 +312,7 @@ _readtext_from_file_object(PyObject *self, PyObject *args, PyObject *kwargs)
     int num_dtype_fields;
 
     if (!PyArg_ParseTupleAndKeywords(
-            args, kwargs, "O|$O&O&O&O&O&O&OiiOOOO", kwlist,
+            args, kwargs, "O|$O&O&O&O&O&O&OnnOOOO", kwlist,
             &file,
             &parse_control_character, &pc.delimiter,
             &parse_control_character, &pc.comment,
