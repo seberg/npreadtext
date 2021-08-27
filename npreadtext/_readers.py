@@ -184,7 +184,7 @@ def read(file, *, delimiter=',', comment='#', quote='"',
 
         preprocess = lambda f: WrapFileLikeStrippingComments(f, encoding, comments)
     else:
-        # No proprocessing necessary
+        # No preprocessing necessary
         assert comments is None
         preprocess = lambda x: x
 

@@ -25,7 +25,7 @@ def _loadtxt(*args, **kwds):
     else:
         if isinstance(comment, (str, bytes)):
             comment = [comment]
-        comment = [x.decode('latin1') if type(x) is bytes else x for x in comment]
+        comment = [x.decode('latin1') if isinstance(x, bytes) else x for x in comment]
 
     try:
         arr = read(*args, delimiter=delimiter, dtype=dtype,
