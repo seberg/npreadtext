@@ -65,13 +65,23 @@ def test1_read_with_comment():
         assert_array_equal(a, al)
 
 
-@pytest.mark.parametrize('comment', ['..', '//', '@-'])
-def test_comment_two_chars(comment):
+@pytest.mark.parametrize('comment', ['..', '//', '@-', 'this is the comment'])
+def test_comment_multiple_chars(comment):
     content = '# IGNORE\n1.5,2.5# ABC\n3.0,4.0# XXX\n5.5,6.0\n'
     txt = StringIO(content.replace('#', comment))
-    a = read(txt, dtype=np.float64, comment=comment)
+    a = read(txt, dtype=np.float64, comment=comment, quote="")
     assert_equal(a, [[1.5, 2.5], [3.0, 4.0], [5.5, 6.0]])
 
+def test_comment_multichar_error_with_quote():
+    txt = StringIO("1,2\n3,4")
+    with pytest.raises(ValueError):
+        read(txt, comment="123")
+    with pytest.raises(ValueError):
+        read(txt, comment=["1", "3"])
+
+    # a single character string in a tuple is unpacked though:
+    a = read(txt, comment=("#",), quote='"')
+    assert_equal(a, [[1, 2], [3, 4]])
 
 def test_decimal_is_comma():
     filename = path.join(path.dirname(__file__),

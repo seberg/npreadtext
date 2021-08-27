@@ -294,8 +294,7 @@ _readtext_from_file_object(PyObject *self, PyObject *args, PyObject *kwargs)
 
     pc.delimiter = *delimiter;
     pc.delimiter_is_whitespace = false;
-    pc.comment[0] = comment[0];
-    pc.comment[1] = comment[0] == '\0' ? '\0' : comment[1];
+    pc.comment = *comment;
     pc.quote = *quote;
     pc.decimal = *decimal;
     pc.sci = *sci;

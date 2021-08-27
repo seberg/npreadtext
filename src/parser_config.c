@@ -9,8 +9,7 @@ default_parser_config(void)
 
     config.delimiter = ',';
     config.quote = '"';
-    config.comment[0] = '#';
-    config.comment[1] = 0;
+    config.comment = '#';
     config.allow_embedded_newline = true;
     config.decimal = '.';
     config.sci = 'E';
