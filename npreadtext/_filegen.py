@@ -35,24 +35,28 @@ class WrapFileLikeStrippingComments:
     """
     def __init__(self, wrapped, encoding, comments):
         self._wrapped = wrapped
+        self._readline = wrapped.readline
         self._encoding = encoding
         self._comments = comments
 
     def readline(self):
-        # Don't bother about retaining newlines when comments are present:
-        orig_line = self._wrapped.readline()
+        orig_line = self._readline()
         if isinstance(orig_line, bytes):
+            # Need to handle conversion here, because we may need to append
+            # a newline...
             orig_line = orig_line.decode(self._encoding)
 
         if not orig_line:
+            # If the line is empty, no more to read (must not append newline)
             return orig_line
+
         line = orig_line
         for c in self._comments:
             line = line.split(c, 1)[0]
 
         # If line was actually split above, we need to ensure it ends with a
         # newline character (the tokenizer currently expects this)
-        if len(line) == orig_line:
+        if len(line) == len(orig_line):
             return line
         return line + "\n"
 
@@ -61,3 +65,7 @@ class WrapFileLikeStrippingComments:
 
     def tell(self):
         return self._wrapped.tell()
+
+    def close(self):
+        # TODO: This may be needed, but no test covers it.
+        return self._wrapped.close()
