@@ -26,11 +26,6 @@ Testing
 
 There are three sets of tests:
 
-- C-tests::
-
-      cd src/ctests && source build_runtest.sh
-      ./runtests
-
 - npreadtxt test suite::
 
       pytest .

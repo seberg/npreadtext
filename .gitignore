@@ -56,5 +56,3 @@ cover/
 # Sphinx documentation
 docs/_build/
 
-# Files specific to this project
-src/ctests/runtests
