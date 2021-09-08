@@ -237,9 +237,7 @@ _readtext_from_stream(stream *s, char *filename, parser_config *pc,
                                        ndim, shape, NULL, result, 0, NULL);
         }
         if (!arr) {
-            free(ft);
             free(result);
-            return NULL;
         }
     }
 
@@ -293,20 +291,21 @@ _readtext_from_file_object(PyObject *self, PyObject *args, PyObject *kwargs)
 
     PyArray_Descr **dtypes = NULL;
 
-    parser_config pc;
-    pc.delimiter = ',';
-    pc.comment = '#';
-    pc.quote = '"';
-    pc.decimal = '.';
-    pc.sci = 'E';
-    pc.imaginary_unit = 'j';
-    pc.allow_float_for_int = true;
-    pc.allow_embedded_newline = true;
-    pc.delimiter_is_whitespace = false;
-    pc.ignore_leading_whitespace = false;
-    pc.ignore_trailing_spaces = false;
-    pc.ignore_blank_lines = true;
-    pc.strict_num_fields = false;
+    parser_config pc = {
+        .delimiter = ',',
+        .comment = '#',
+        .quote = '"',
+        .decimal = '.',
+        .sci = 'E',
+        .imaginary_unit = 'j',
+        .allow_float_for_int = true,
+        .allow_embedded_newline = true,
+        .delimiter_is_whitespace = false,
+        .ignore_leading_whitespace = false,
+        .ignore_trailing_spaces = false,
+        .ignore_blank_lines = true,
+        .strict_num_fields = false,
+    };
 
     PyObject *arr = NULL;
     int num_dtype_fields;
