@@ -62,11 +62,17 @@ Setting up
 - Back in numpy repo, create a branch (asv works best with committed changes):
 
   - ``git checkout -b monkeypatch-npreadtxt``
-  - Modify the ``bench_io.py`` benchmark file to patch loadtxt, e.g. at the top
-  of the file::
-    
-      from npreadtext._loadtxt import _loadtxt
-      np.loadtxt = _loadtxt
+  - Modify the ``numpy/__init__.py`` to monkeypatch ``_loadtxt`` into numpy
+    in place of ``np.loadtxt``. For example, delete the original loadtxt from
+    ``__init__.py`` and modify the ``__getattr__`` to return ``_loadtxt``::
+
+       del loadtxt
+       def __getattr__(attr):
+           if attr == "loadtxt":
+               sys.path.append("/path/to/npreadtext/")
+               from npreadtext import _loadtxt
+               return _loadtxt
+           ...
 
   - Commit the changes
 
@@ -77,17 +83,7 @@ In the numpy repo, checkout the branch you want to compare against (presumably
 ``main``):
 
 - ``git checkout main``
-- ``cd benchmarks``
-- ``asv run -n -e --python=same -b bench_io |tee > /tmp/main.bench``
-
-Then run the same procedure on the patched branch:
-
-- ``git checkout monkeypatch-npreadtext``
-- ``asv run -n -e --python=same -b bench_io |tee > /tmp/npreadtext.bench``
-
-The results can be compared simply with ``diff``::
-
-    diff -y --color /tmp/master.bench /tmp/npreadtext.bench
+- ``python runtests.py --bench-compare monkeypatch-npreadtxt bench_io``
 
 Comparing with other text loaders
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
