@@ -10,20 +10,6 @@
 #include "field_types.h"
 #include "parser_config.h"
 
-//
-// This structure holds information about errors arising
-// in read_rows().
-//
-typedef struct _read_error {
-    int error_type;
-    int line_number;
-    int field_number;
-    int char_position;
-    PyArray_Descr *descr;
-    // int32_t itemsize;  // not sure this is needed.
-    int32_t column_index; // for ERROR_INVALID_COLUMN_INDEX;
-} read_error_type;
-
 
 PyArrayObject *
 read_rows(stream *s,
