@@ -2,6 +2,10 @@ name: tests
 
 on: [push, pull_request]
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
 
   test:
@@ -9,7 +13,7 @@ jobs:
     strategy:
       # max-parallel: 4
       matrix:
-        os: [ubuntu, macos]  # Add windows
+        os: [ubuntu, macos, windows]
         python-version: [3.7, 3.8, 3.9]
         numpy-version: [1.19.*, 1.20.*, 1.21.*]
         compat-test-ignore: ["test_converters_decode,test_converters_nodecode,test_from_float_hex"]
@@ -53,7 +57,7 @@ jobs:
     strategy:
       max-parallel: 2
       matrix:
-        os: [ubuntu]  # Add macos and windows
+        os: [ubuntu, macos, windows]
         python-version: [3.9]
         numpy-version: [1.21.*]
         test-arg: ["numpy.lib.tests.test_io::TestLoadTxt",
