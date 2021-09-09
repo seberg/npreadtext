@@ -42,7 +42,7 @@ def configuration(parent_package='', top_path=None):
     config.add_extension(
             'npreadtext._readtextmodule',
             sources=[path.join('src', t) for t in cfiles],
-            include_dirs=[numpy.get_include()],)
+            include_dirs=[numpy.get_include(), "src"],)
     return config
 
 
