@@ -7,7 +7,6 @@
 #include <errno.h>
 #include <ctype.h>
 #include <stdbool.h>
-#include <complex.h>
 
 #include "conversions.h"
 
@@ -181,8 +180,8 @@ to_cfloat(PyArray_Descr *descr,
     if (!success) {
         return -1;
     }
-    complex float val = real + I*imag;
-    memcpy(dataptr, &val, sizeof(complex float));
+    npy_complex64 val = {real, imag};
+    memcpy(dataptr, &val, sizeof(npy_complex64));
     if (!PyArray_ISNBO(descr->byteorder)) {
         descr->f->copyswap(dataptr, dataptr, 1, NULL);
     }
@@ -213,8 +212,8 @@ to_cdouble(PyArray_Descr *descr,
     if (!success) {
         return -1;
     }
-    complex double val = real + I*imag;
-    memcpy(dataptr, &val, sizeof(complex double));
+    npy_complex128 val = {real, imag};
+    memcpy(dataptr, &val, sizeof(npy_complex128));
     if (!PyArray_ISNBO(descr->byteorder)) {
         descr->f->copyswap(dataptr, dataptr, 1, NULL);
     }
