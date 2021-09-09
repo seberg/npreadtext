@@ -16,7 +16,6 @@
 #include <stdbool.h>
 
 #include <sys/types.h>
-#include <unistd.h>
 
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>

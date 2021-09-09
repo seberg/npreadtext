@@ -13,7 +13,6 @@
 #include <time.h>
 #include <math.h>
 #include <stdbool.h>
-#include <complex.h>
 
 #include "stream.h"
 #include "tokenize.h"

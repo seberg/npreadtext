@@ -11,7 +11,6 @@
 #include "numpy/arrayobject.h"
 
 #include "parser_config.h"
-#include "stream_file.h"
 #include "stream_python_file_by_line.h"
 #include "field_types.h"
 #include "analyze.h"
