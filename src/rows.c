@@ -78,36 +78,6 @@ max_token_len(
 
 
 /*
- * When resizing strings, we need to allocate a new area and then copy
- * all strings with zero padding.  (Currently, this function uses calloc
- * rather than manual zero padding.)
- */
-static int
-expand_string_data_and_copy(
-        size_t old_itemsize, size_t new_itemsize,
-        size_t allocated_rows, size_t num_fields,
-        char **data_array, char **data_ptr)
-{
-    size_t new_num_elements = allocated_rows * num_fields;
-    char *new_data = calloc(new_num_elements, new_itemsize);
-    if (new_data == NULL) {
-        PyErr_NoMemory();
-        return -1;
-    }
-    char *orig_ptr = *data_array;
-    char *new_ptr = new_data;
-    while (orig_ptr < *data_ptr) {
-        memcpy(new_ptr, orig_ptr, old_itemsize);
-        new_ptr += new_itemsize;
-        orig_ptr += old_itemsize;
-    }
-    *data_array = new_data;
-    *data_ptr = new_ptr;
-    return 0;
-}
-
-
-/*
  *  Create the array of converter functions from the Python converters dict.
  */
 PyObject **
@@ -151,69 +121,88 @@ create_conv_funcs(
     return conv_funcs;
 }
 
-/*
- *  XXX Handle errors in any of the functions called by read_rows().
+/**
+ * Read a file into the provided array, or create (and possibly grow) an
+ * array to read into.
  *
- *  XXX Check handling of *nrows == 0.
+ * @param s The stream object/struct providing reading capabilities used by
+ *        the tokenizer.
+ * @param nrows Pointer to the number of rows to read, or -1.  If negative
+ *        all rows are read.  The value is replaced with the actual number
+ *        of rows read.
+ * @param num_field_types The number of field types stored in `field_types`.
+ * @param field_types Information about the dtype for each column (or one if
+ *        `homogeneous`).
+ * @param pconfig Pointer to the parser config object used by both the
+ *        tokenizer and the conversion functions.
+ * @param num_usecols The number of columns in `usecols`.
+ * @param usecols An array of length `num_usecols` or NULL.  If given indicates
+ *        which column is read for each individual row (negative columns are
+ *        accepted).
+ * @param skiplines The number of lines to skip, these lines are ignored.
+ * @param converters Python dictionary of converters.
+ *        TODO: Move converter preparation earlier and pass an array and offset
+ *              instead (or an array of positive and negative indices).
+ * @param data_array An array to be filled or NULL.  In either case a new
+ *        reference is returned (the reference to `data_array` is not stolen).
+ * @param out_descr The dtype used for allocating a new array.  This is not
+ *        used if `data_array` is provided.  Note that the actual dtype of the
+ *        returned array can differ for strings.
+ * @param num_cols Pointer in which the actual (discovered) number of columns
+ *        is returned.  This is only relevant if `homogeneous` is true.
+ * @param homogeneous Whether the datatype of the array is not homogeneous,
+ *        i.e. not structured.  In this case the number of columns has to be
+ *        discovered an the returned array will be 2-dimensional rather than
+ *        1-dimensional.
  *
- *  Parameters
- *  ----------
- *  stream *s
- *  int *nrows
- *      On input, *nrows is the maximum number of rows to read.
- *      If *nrows is positive, `data_array` must point to the block of data
- *      where the data is to be stored.
- *      If *nrows is negative, all the rows in the file should be read, and
- *      the given value of `data_array` is ignored.  Data will be allocated
- *      dynamically in this function.
- *      On return, *nrows is the number of rows actually read from the file.
- *  int num_field_types
- *      Number of field types (i.e. the number of fields).  This is the
- *      length of the array pointed to by field_types.
- *  field_type *field_types
- *  parser_config *pconfig
- *  int32_t *usecols
- *      Pointer to array of column indices to use.
- *      If NULL, use all the columns (and ignore `num_usecols`).
- *  int num_usecols
- *      Length of the array `usecols`.  Ignored if `usecols` is NULL.
- *  int skiplines
- *  PyObject *converters
- *      dicitionary of converters
- *  void *data_array
- *  int *num_cols
- *      The actual number of columns (or fields) of the data being returned.
+ * @returns Returns the result as an array object or NULL on error.  The result
+ *          is always a new reference (even when `data_array` was passed in).
  */
-char *
+PyArrayObject *
 read_rows(stream *s,
         Py_ssize_t *nrows, int num_field_types, field_type *field_types,
-        parser_config *pconfig, int32_t *usecols, int num_usecols,
-        Py_ssize_t skiplines, PyObject *converters, char *data_array,
-        int *num_cols, bool homogeneous, bool needs_init)
+        parser_config *pconfig, int num_usecols, int *usecols,
+        Py_ssize_t skiplines, PyObject *converters,
+        PyArrayObject *data_array, PyArray_Descr *out_descr,
+        bool homogeneous)
 {
     char *data_ptr = NULL;
     int current_num_fields;
     size_t row_size;
     PyObject **conv_funcs = NULL;
 
+    bool needs_init = PyDataType_FLAGCHK(out_descr, NPY_NEEDS_INIT);
+
+    int ndim = homogeneous ? 2 : 1;
+    npy_intp result_shape[2] = {0, 1};
+
     bool track_string_size = false;
 
     bool data_array_allocated = data_array == NULL;
+    /* Make sure we own `data_array` for the purpose of error handling */
+    Py_XINCREF(data_array);
     size_t data_allocated_rows = 0;
 
     int ts_result = 0;
     tokenizer_state ts;
     if (tokenizer_init(&ts, pconfig) < 0) {
-        return NULL;
+        goto error;
     }
 
+    /* Set the actual number of fields if it is already known, otherwise -1 */
     int actual_num_fields = -1;
+    if (usecols != NULL) {
+        actual_num_fields = num_usecols;
+    }
+    else if (!homogeneous) {
+        actual_num_fields = num_field_types;
+    }
 
     for (; skiplines > 0; skiplines--) {
         ts.state = TOKENIZE_GOTO_LINE_END;
         ts_result = tokenize(s, &ts, pconfig);
         if (ts_result < 0) {
-            return NULL;
+            goto error;
         }
         else if (ts_result != 0) {
             /* Fewer lines than skiplines is acceptable */
@@ -236,7 +225,7 @@ read_rows(stream *s,
     while ((*nrows < 0 || row_count < *nrows) && ts_result == 0) {
         ts_result = tokenize(s, &ts, pconfig);
         if (ts_result < 0) {
-            return NULL;
+            goto error;
         }
         current_num_fields = ts.num_fields;
         field_info *fields = ts.fields;
@@ -248,20 +237,15 @@ read_rows(stream *s,
             // We've deferred some of the initialization tasks to here,
             // because we've now read the first line, and we definitively
             // know how many fields (i.e. columns) we will be processing.
-            if (!homogeneous) {
-                actual_num_fields = num_field_types;
-            }
-            else if (usecols != NULL) {
-                actual_num_fields = num_usecols;
-            }
-            else {
-                // num_field_types is 1.  (XXX Check that it can't be 0 or neg.)
-                // Set actual_num_fields to the number of fields found in the
-                // first line of data.
+            if (actual_num_fields == -1) {
                 actual_num_fields = current_num_fields;
             }
 
             if (usecols == NULL) {
+                /* TODO: This seeems wrong, converters are based on the current
+                 *       number of fields.  So we should never require usecols.
+                 *       (https://github.com/BIDS-numpy/npreadtext/issues/52)
+                 */
                 num_usecols = actual_num_fields;
             }
 
@@ -273,10 +257,12 @@ read_rows(stream *s,
                 conv_funcs = calloc(num_usecols, sizeof(PyObject *));
             }
             if (conv_funcs == NULL) {
-                return NULL;
+                goto error;
             }
 
-            *num_cols = actual_num_fields;
+            /* Note that result_shape[1] is only used if homogeneous is true */
+            result_shape[1] = actual_num_fields;
+            /* row_size is used for growing the raw memory when necessary */
             row_size = compute_row_size(actual_num_fields,
                                         num_field_types, field_types);
 
@@ -291,23 +277,26 @@ read_rows(stream *s,
                 else {
                     data_allocated_rows = *nrows;
                 }
-                size_t size = data_allocated_rows * row_size;
-                if (!needs_init) {
-                    data_array = malloc(size ? size : 1);
-                }
-                else {
-                    data_array = calloc(size ? size : 1, 1);
-                }
+                result_shape[0] = data_allocated_rows;
+                Py_INCREF(out_descr);
+                /*
+                 * We do not use Empty, as it would fill with None
+                 * and requiring decref'ing if we shrink again.
+                 */
+                data_array = (PyArrayObject *)PyArray_SimpleNewFromDescr(
+                        ndim, result_shape, out_descr);
                 if (data_array == NULL) {
-                    PyErr_NoMemory();
                     goto error;
+                }
+                if (needs_init) {
+                    memset(PyArray_BYTES(data_array), 0, PyArray_NBYTES(data_array));
                 }
             }
             else {
                 assert(*nrows >=0);
                 data_allocated_rows = *nrows;
             }
-            data_ptr = data_array;
+            data_ptr = PyArray_BYTES(data_array);
         }
 
         if (track_string_size) {
@@ -318,17 +307,36 @@ read_rows(stream *s,
             }
             size_t maxlen = max_token_len(fields, actual_num_fields, usecols);
             size_t new_itemsize = (field_types[0].typecode == 'S') ? maxlen : 4*maxlen;
+            if (new_itemsize > NPY_MAX_INT) {
+                PyErr_Format(PyExc_ValueError,
+                        "string length of %zu is too long to be stored in a "
+                        "NumPy string dtype (too long).", maxlen);
+                goto error;
+            }
 
             if (new_itemsize > field_types[0].itemsize) {
-                if (expand_string_data_and_copy(
-                        field_types[0].itemsize, new_itemsize,
-                        data_allocated_rows, actual_num_fields,
-                        &data_array, &data_ptr) < 0) {
+                row_size = new_itemsize * actual_num_fields;
+                /* Update the descriptor to the new string length */
+                field_types[0].itemsize = new_itemsize;
+                PyArray_Descr *new_descr = PyArray_DescrNewFromType(
+                        field_types[0].descr->type_num);
+                if (new_descr == NULL) {
                     goto error;
                 }
-                row_size = new_itemsize * actual_num_fields;
-                field_types[0].itemsize = new_itemsize;
-                field_types[0].descr->elsize = new_itemsize;
+                new_descr->elsize = (int)new_itemsize;
+                Py_SETREF(field_types[0].descr, new_descr);
+                /* Create new array and copy data (empty works for strings) */
+                Py_INCREF(new_descr);
+                PyArrayObject *new_arr = (PyArrayObject *)PyArray_Empty(
+                        ndim, PyArray_DIMS(data_array), new_descr, 0);
+                if (new_arr == NULL) {
+                    goto error;
+                }
+                PyArray_CopyInto(new_arr, data_array);
+                Py_DECREF(data_array);
+                data_array = new_arr;
+                /* Update `data_ptr` since we replaced `data_array` */
+                data_ptr = PyArray_BYTES(data_array) + row_count * row_size;
             }
         }
 
@@ -350,15 +358,16 @@ read_rows(stream *s,
             size_t new_rows = data_allocated_rows + growth;
 
             size_t size = new_rows * row_size;
-            char *new_arr = realloc(data_array, size ? size : 1);
-            if (new_arr == NULL) {
+            char *new_data = PyDataMem_RENEW(
+                    PyArray_BYTES(data_array), size ? size : 1);
+            if (new_data == NULL) {
                 PyErr_NoMemory();
                 goto error;
             }
-            if (new_arr != data_array) {
-                data_array = new_arr;
-                data_ptr = new_arr + data_allocated_rows * row_size;
-            }
+            /* Replace the arrays data since it may have changed */
+            ((PyArrayObject_fields *)data_array)->data = new_data;
+            ((PyArrayObject_fields *)data_array)->dimensions[0] = new_rows;
+            data_ptr = new_data + row_count * row_size;
             data_allocated_rows = new_rows;
             if (needs_init) {
                 memset(data_ptr, '\0', growth * row_size);
@@ -429,23 +438,41 @@ read_rows(stream *s,
     tokenizer_clear(&ts);
     free(conv_funcs);
 
+    if (data_array == NULL) {
+        assert(row_count == 0 && result_shape[0] == 0);
+        if (actual_num_fields == -1) {
+            /*
+             * We found no rows and have to discover the number of elements
+             * we have no choice but to guess 1.
+             * NOTE: It may make sense to move this outside of here to refine
+             *       the behaviour where necessary.
+             */
+            result_shape[1] = 1;
+        }
+        else {
+            result_shape[1] = actual_num_fields;
+        }
+        Py_INCREF(out_descr);
+        data_array = (PyArrayObject *)PyArray_Empty(
+                ndim, result_shape, out_descr, 0);
+    }
+
     /*
      * Note that if there is no data, `data_array` may still be NULL and
      * row_count is 0.  In that case, always realloc just in case.
      */
-    if (data_array_allocated && (
-            data_allocated_rows != row_count || row_count == 0)) {
+    if (data_array_allocated && data_allocated_rows != row_count) {
         size_t size = row_count * row_size;
-        char *new_data = realloc(data_array, size ? size : 1);
+        char *new_data = PyDataMem_RENEW(
+                PyArray_BYTES(data_array), size ? size : 1);
         if (new_data == NULL) {
-            free(data_array);
+            Py_DECREF(data_array);
             PyErr_NoMemory();
             return NULL;
         }
-        data_array = new_data;
+        ((PyArrayObject_fields *)data_array)->data = new_data;
+        ((PyArrayObject_fields *)data_array)->dimensions[0] = row_count;
     }
-
-    //stream_close(s, RESTORE_FINAL);
 
     *nrows = row_count;
 
@@ -454,8 +481,6 @@ read_rows(stream *s,
   error:
     free(conv_funcs);
     tokenizer_clear(&ts);
-    if (data_array_allocated) {
-        free(data_array);
-    }
+    Py_XDECREF(data_array);
     return NULL;
 }

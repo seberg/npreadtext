@@ -24,18 +24,13 @@ typedef struct _read_error {
     int32_t column_index; // for ERROR_INVALID_COLUMN_INDEX;
 } read_error_type;
 
-/*
-int analyze(FILE *f, parser_config *pconfig, int skiplines, int numrows,
-               char *datetime_fmt, int *num_fields, field_type **field_types);
 
-int count_fields(FILE *f, parser_config *pconfig, int skiprows);
-int count_rows(FILE *f, parser_config *pconfig);
-*/
-char *
+PyArrayObject *
 read_rows(stream *s,
         Py_ssize_t *nrows, int num_field_types, field_type *field_types,
-        parser_config *pconfig, int32_t *usecols, int num_usecols,
-        Py_ssize_t skiplines, PyObject *converters, char *data_array,
-        int *num_cols, bool homogeneous, bool needs_init);
+        parser_config *pconfig, int num_usecols, int *usecols,
+        Py_ssize_t skiplines, PyObject *converters,
+        PyArrayObject *data_array, PyArray_Descr *out_descr,
+        bool homogeneous);
 
 #endif

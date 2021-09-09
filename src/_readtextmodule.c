@@ -77,7 +77,7 @@ _readtext_from_stream(stream *s, char *filename, parser_config *pc,
                       PyObject *dtype, PyArray_Descr **dtypes,
                       int num_dtype_fields)
 {
-    PyObject *arr = NULL;
+    PyArrayObject *arr = NULL;
     PyArray_Descr *out_dtype = NULL;
     int32_t *cols;
     int ncols;
@@ -86,7 +86,6 @@ _readtext_from_stream(stream *s, char *filename, parser_config *pc,
     field_type *ft = NULL;
 
     bool homogeneous;
-    bool needs_init = false;
     npy_intp shape[2];
 
     if (dtype == Py_None) {
@@ -102,13 +101,7 @@ _readtext_from_stream(stream *s, char *filename, parser_config *pc,
             return NULL;
         }
         stream_seek(s, 0);
-        if (nrows == 0) {
-            // Empty file, and a dtype was not given.  In this case, return
-            // an array with shape (0, 0) and data type float64.
-            npy_intp dims[2] = {0, 0};
-            arr = PyArray_SimpleNew(2, dims, NPY_FLOAT64);
-            goto finish;
-        }
+
         homogeneous = field_types_is_homogeneous(num_fields, ft);
         if (field_types_init_descriptors(num_fields, ft) < 0) {
             goto finish;
@@ -132,7 +125,6 @@ _readtext_from_stream(stream *s, char *filename, parser_config *pc,
          */
         out_dtype = (PyArray_Descr *)dtype;
         Py_INCREF(out_dtype);
-        needs_init = PyDataType_FLAGCHK(out_dtype, NPY_NEEDS_INIT);
 
         /* TODO: Ridiculous, should just pass it in (or reuse num_fields) */
         homogeneous = num_dtype_fields == 1 && (out_dtype == dtypes[0]);
@@ -162,82 +154,33 @@ _readtext_from_stream(stream *s, char *filename, parser_config *pc,
     }
 
     if (dtype == Py_None) {
-        int num_cols;
         int ndim = homogeneous ? 2 : 1;
 
         Py_INCREF(out_dtype);
-        arr = PyArray_SimpleNewFromDescr(ndim, shape, out_dtype);
-        if (!arr) {
+        PyArrayObject *tmp_arr = (PyArrayObject *)PyArray_SimpleNewFromDescr(
+                ndim, shape, out_dtype);
+        if (tmp_arr == NULL) {
             goto finish;
         }
         Py_ssize_t num_rows = nrows;
-        void *result = read_rows(s,
-                &num_rows, num_fields, ft, pc, cols, ncols, skiprows,
-                converters, PyArray_DATA(arr), &num_cols, homogeneous,
-                needs_init /* unused, data is allocated and initialized */);
-        if (result == NULL) {
+        arr = read_rows(
+                s, &num_rows, num_fields, ft, pc,
+                ncols, cols, skiprows, converters,
+                tmp_arr, out_dtype, homogeneous);
+        Py_DECREF(tmp_arr);  /* should be identical to `arr`, but we own it */
+        if (arr == NULL) {
             goto finish;
         }
     }
     else {
-        // A dtype was given.
-        int num_cols;
-        int ndim;
         Py_ssize_t num_rows = nrows;
-        bool track_string_size = ((num_dtype_fields == 1) &&
-                                  (ft[0].itemsize == 0) &&
-                                  ((ft[0].typecode == 'S') ||
-                                   (ft[0].typecode == 'U')));
-        if (track_string_size) {
-            /*
-             * The string size tracking currently mutates the descriptor,
-             * so we have to make a copy that we own (but can use it later)
-             */
-            ft[0].descr = PyArray_DescrNewFromType(ft[0].descr->type_num);
-            if (ft[0].descr == NULL) {
-                goto finish;
-            }
-        }
-        void *result = read_rows(s, &num_rows, num_fields, ft, pc,
-                                 cols, ncols, skiprows, converters,
-                                 NULL, &num_cols, homogeneous, needs_init);
-        if (result == NULL) {
-            goto finish;
-        }
 
-        shape[0] = num_rows;
-        if (PyDataType_ISSTRING(out_dtype) || !PyDataType_ISEXTENDED(out_dtype)) {
-            ndim = 2;
-            if (num_rows > 0) {
-                shape[1] = num_cols;
-            }
-            else {
-                // num_rows == 0 => empty file.
-                shape[1] = 0;
-            }
-        }
-        else {
-            ndim = 1;
-            shape[1] = 1;  // Not actually necessary to fill this in.
-        }
-        if (track_string_size) {
-            /* The reading modified `ft[0]` in-place, use it */
-            PyArray_Descr *dt = ft[0].descr;
-            Py_INCREF(dt);
-            // XXX Fix memory management - `result` was malloc'd.
-            arr = PyArray_NewFromDescr(&PyArray_Type, dt,
-                                       ndim, shape, NULL, result, 0, NULL);
-        }
-        else {
-            // We have to INCREF dtype, because the Python caller owns a
-            // reference, and PyArray_NewFromDescr steals a reference to it.
-            Py_INCREF(out_dtype);
-            // XXX Fix memory management - `result` was malloc'd.
-            arr = PyArray_NewFromDescr(&PyArray_Type, out_dtype,
-                                       ndim, shape, NULL, result, 0, NULL);
-        }
-        if (!arr) {
-            free(result);
+        arr = read_rows(
+                s, &num_rows, num_fields, ft, pc,
+                ncols, cols, skiprows, converters,
+                NULL, out_dtype, homogeneous);
+        if (arr == NULL) {
+            goto finish;
         }
     }
 
@@ -247,7 +190,7 @@ _readtext_from_stream(stream *s, char *filename, parser_config *pc,
         field_types_clear(num_fields, ft);
         free(ft);
     }
-    return arr;
+    return (PyObject *)arr;
 }
 
 

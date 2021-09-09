@@ -1,8 +1,9 @@
+import sys
 from os import path
 from io import StringIO
 import pytest
 import numpy as np
-from numpy.testing import assert_array_equal, assert_equal
+from numpy.testing import assert_array_equal, assert_equal, HAS_REFCOUNT
 from npreadtext import read
 
 
@@ -407,3 +408,24 @@ def test_read_from_bad_generator():
     with pytest.raises(TypeError,
             match=r"object.readline\(\) returned non-string"):
         read(BadFileLike(), dtype='i,i', delimiter=',')
+
+
+@pytest.mark.skipif(not HAS_REFCOUNT, reason="Python lacks refcounts")
+def test_object_cleanup_on_read_error():
+    sentinel = object()
+
+    already_read = 0
+    def conv(x):
+        nonlocal already_read
+        if already_read > 4999:
+            raise ValueError("failed half-way through!")
+        already_read += 1
+        return sentinel
+
+    txt = StringIO("x\n" * 10000)
+
+    # note that this could be a chained ValueError instead:
+    with pytest.raises(ValueError, match="failed half-way through!"):
+        read(txt, dtype=object, converters={0: conv})
+
+    assert sys.getrefcount(sentinel) == 2
