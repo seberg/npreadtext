@@ -210,8 +210,6 @@ def read(file, *, delimiter=',', comment='#', quote='"',
             raise ValueError(f"length of usecols ({len(usecols)}) and "
                              f"number of fields in dtype ({len(codes)}) "
                              "do not match.")
-        if len(dtypes) == 1 and usecols is not None:
-            dtypes *= len(usecols)
     else:
         dtypes = None
 
