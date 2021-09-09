@@ -1,5 +1,3 @@
-#define _XOPEN_SOURCE
-
 #include <Python.h>
 
 #include <stdio.h>
