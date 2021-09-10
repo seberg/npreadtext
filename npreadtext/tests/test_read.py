@@ -406,3 +406,10 @@ def test_object_cleanup_on_read_error():
         read(txt, dtype=object, converters={0: conv})
 
     assert sys.getrefcount(sentinel) == 2
+
+
+def test_bad_encoding():
+    data = [b"this is a byte string"]
+
+    with pytest.raises(LookupError):
+        read(data, encoding="this encoding is invalid!")
