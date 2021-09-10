@@ -189,7 +189,6 @@ to_cfloat(PyArray_Descr *descr,
 }
 
 
-
 int
 to_cdouble(PyArray_Descr *descr,
         const Py_UCS4 *str, const Py_UCS4 *end, char *dataptr,
@@ -278,14 +277,10 @@ call_converter_function(PyObject *func, const Py_UCS4 *str, size_t length)
 {
     PyObject *s = PyUnicode_FromKindAndData(PyUnicode_4BYTE_KIND, str, length);
     if (s == NULL || func == NULL) {
-        // fprintf(stderr, "*** PyUnicode_FromKindAndData failed ***\n");
         return s;
     }
     PyObject *result = PyObject_CallFunctionObjArgs(func, s, NULL);
     Py_DECREF(s);
-    if (result == NULL) {
-        // fprintf(stderr, "*** PyObject_CallFunctionObjArgs failed ***\n");
-    }
     return result;
 }
 
