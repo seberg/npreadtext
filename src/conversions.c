@@ -58,7 +58,7 @@ to_float(PyArray_Descr *descr,
 }
 
 
-/* TODO: Used only for the type inference (which glances over the bugs though) */
+/* Note: Currently used in the iteger code as a fallback */
 bool
 to_double_raw(const Py_UCS4 *str, double *res, Py_UCS4 decimal, Py_UCS4 sci)
 {
@@ -101,7 +101,7 @@ to_double(PyArray_Descr *descr,
 }
 
 
-bool
+static bool
 to_complex_raw(
         const Py_UCS4 *item, double *p_real, double *p_imag,
         Py_UCS4 sci, Py_UCS4 decimal, Py_UCS4 imaginary_unit,

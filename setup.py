@@ -35,7 +35,7 @@ def configuration(parent_package='', top_path=None):
     config.add_subpackage('npreadtext')
     cfiles = ['_readtextmodule.c',
               'rows.c', 'tokenize.c.src',
-              'conversions.c', 'str_to_int.c', 'str_to_double.c',
+              'conversions.c', 'str_to_int.c',
               'pow10table.c',
               'stream_pyobject.c',
               'field_types.c', 'dtoa_modified.c',]
