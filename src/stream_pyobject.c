@@ -47,8 +47,6 @@ typedef struct {
  * Helper function to support byte objects as well as unicode strings.
  *
  * NOTE: Steals a reference to `str` (although usually returns it unmodified).
- *
- * TODO: Make encoding a char *, the utf-8 default also should be incorrect.
  */
 static NPY_INLINE PyObject *
 process_stringlike(PyObject *str, char *encoding)

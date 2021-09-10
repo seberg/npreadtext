@@ -189,7 +189,6 @@ to_cfloat(PyArray_Descr *descr,
 }
 
 
-
 int
 to_cdouble(PyArray_Descr *descr,
         const Py_UCS4 *str, const Py_UCS4 *end, char *dataptr,
@@ -234,8 +233,15 @@ to_string(PyArray_Descr *descr,
 
     for (size_t i = 0; i < length; i++) {
         if (c < end) {
-            // TODO: This cast is wrong as it really should be encoding/error?!
-            dataptr[i] = (char)(*c);
+            /*
+             * loadtxt assumed latin1, which is compatible with UCS1 (first
+             * 256 unicode characters).
+             */
+            if (NPY_UNLIKELY(*c > 255)) {
+                /* TODO: Was UnicodeDecodeError, is unspecific error good? */
+                return -1;
+            }
+            dataptr[i] = (Py_UCS1)(*c);
             c++;
         }
         else {
@@ -278,14 +284,10 @@ call_converter_function(PyObject *func, const Py_UCS4 *str, size_t length)
 {
     PyObject *s = PyUnicode_FromKindAndData(PyUnicode_4BYTE_KIND, str, length);
     if (s == NULL || func == NULL) {
-        // fprintf(stderr, "*** PyUnicode_FromKindAndData failed ***\n");
         return s;
     }
     PyObject *result = PyObject_CallFunctionObjArgs(func, s, NULL);
     Py_DECREF(s);
-    if (result == NULL) {
-        // fprintf(stderr, "*** PyObject_CallFunctionObjArgs failed ***\n");
-    }
     return result;
 }
 
