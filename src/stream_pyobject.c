@@ -38,10 +38,8 @@ typedef struct {
     /* Python str object holding the line most recently read from the file. */
     PyObject *chunk;
 
-    // encoding must be None or a bytes object holding an
-    // ASCII-encoding string, e.g. b'utf-8'.
-    PyObject *encoding;
-
+    /* Encoding compatible with Python's `PyUnicode_Encode` (may be NULL) */
+    char *encoding;
 } python_chunks_from_file;
 
 
@@ -53,18 +51,11 @@ typedef struct {
  * TODO: Make encoding a char *, the utf-8 default also should be incorrect.
  */
 static NPY_INLINE PyObject *
-process_stringlike(PyObject *str, PyObject *encoding)
+process_stringlike(PyObject *str, char *encoding)
 {
     if (PyBytes_Check(str)) {
         PyObject *ustr;
-        char *enc;
-        if (encoding == Py_None) {
-            enc = "utf-8";
-        }
-        else {
-            enc = PyBytes_AsString(encoding);
-        }
-        ustr = PyUnicode_FromEncodedObject(str, enc, NULL);
+        ustr = PyUnicode_FromEncodedObject(str, encoding, NULL);
         if (ustr == NULL) {
             return NULL;
         }
@@ -142,7 +133,7 @@ fb_del(stream *strm)
 
 
 stream *
-stream_python_file(PyObject *obj, PyObject *encoding)
+stream_python_file(PyObject *obj, char *encoding)
 {
     python_chunks_from_file *fb;
     stream *strm;
@@ -157,7 +148,6 @@ stream_python_file(PyObject *obj, PyObject *encoding)
     fb->read = NULL;
     fb->chunksize = NULL;
     fb->chunk = NULL;
-    // TODO: Encoding is borrowed, that is bad.
     fb->encoding = encoding;
 
     strm = (stream *) malloc(sizeof(stream));
@@ -201,10 +191,8 @@ typedef struct {
     /* Python str object holding the line most recently fetched */
     PyObject *line;
 
-    // encoding must be None or a bytes object holding an
-    // ASCII-encoding string, e.g. b'utf-8'.
-    PyObject *encoding;
-
+    /* Encoding compatible with Python's `PyUnicode_Encode` (may be NULL) */
+    char *encoding;
 } python_lines_from_iterator;
 
 
@@ -249,7 +237,7 @@ it_nextbuf(python_lines_from_iterator *it, char **start, char **end, int *kind)
 
 
 stream *
-stream_python_iterable(PyObject *obj, PyObject *encoding)
+stream_python_iterable(PyObject *obj, char *encoding)
 {
     python_lines_from_iterator *it;
     stream *strm;
@@ -262,7 +250,6 @@ stream_python_iterable(PyObject *obj, PyObject *encoding)
 
     it->iterator = NULL;
     it->line = NULL;
-    // TODO: Encoding is borrowed, that is bad.
     it->encoding = encoding;
 
     strm = (stream *) malloc(sizeof(stream));

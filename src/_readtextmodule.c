@@ -137,7 +137,7 @@ _readtext_from_file_object(PyObject *self, PyObject *args, PyObject *kwargs)
 
     PyObject *dtype = Py_None;
     PyObject *dtypes_obj = Py_None;
-    PyObject *encoding = Py_None;
+    char *encoding = NULL;
     int filelike = 1;
 
     PyArray_Descr **dtypes = NULL;
@@ -162,7 +162,7 @@ _readtext_from_file_object(PyObject *self, PyObject *args, PyObject *kwargs)
     int num_dtype_fields;
 
     if (!PyArg_ParseTupleAndKeywords(
-            args, kwargs, "O|$O&O&O&O&O&O&OnnOOOOp", kwlist,
+            args, kwargs, "O|$O&O&O&O&O&O&OnnOOOsp", kwlist,
             &file,
             &parse_control_character, &pc.delimiter,
             &parse_control_character, &pc.comment,

@@ -1,6 +1,5 @@
 
 import os
-import codecs
 import operator
 import numpy as np
 from . import _flatten_dtype
@@ -117,12 +116,14 @@ def read(file, *, delimiter=',', comment='#', quote='"',
     array([(1. , 10, b'alpha'), (2.3, 25, b'beta'), (4.5, 16, b'gamma')],
           dtype=[('f0', '<f8'), ('f1', 'u1'), ('f2', 'S5')])
     """
+    # TODO: encoding needs a bit closer look still to compare with loadtxt.
+    #       1. loadtxt tries to guess encoding from the object.
+    #       2. Does loadtxt actually use the preferred encoding, or only
+    #          indirectly through the mechanism in 1.?
+    #          (This matters for an iterable of byte!)
     if encoding is None:
         import locale
         encoding = locale.getpreferredencoding()
-
-    # This will raise a LookupError if the encoding is unknown.
-    codecs.lookup(encoding)
 
     if dtype is None:
         raise TypeError("a dtype must be provided.")
@@ -228,11 +229,6 @@ def read(file, *, delimiter=',', comment='#', quote='"',
     if isinstance(file, os.PathLike):
         fname = os.fspath(file)
 
-    # TODO: If we do no have a file-like loadtxt still has some encoding
-    #       stuff going on.  We should attempt to get the encoding from the
-    #       object.
-    enc = encoding.encode('ascii') if encoding is not None else None
-
     # TODO: loadtxt actually uses `file + ''` to decide this
     if isinstance(file, str):
         # We open a file-like object (using datasource).  Since we own the file
@@ -246,7 +242,7 @@ def read(file, *, delimiter=',', comment='#', quote='"',
                     decimal=decimal, sci=sci, imaginary_unit=imaginary_unit,
                     usecols=usecols, skiprows=skiprows, max_rows=max_rows,
                     converters=converters, dtype=dtype, dtypes=dtypes,
-                    encoding=enc, filelike=comments is None)
+                    encoding=encoding, filelike=comments is None)
         finally:
             f.close()
     else:
@@ -262,7 +258,7 @@ def read(file, *, delimiter=',', comment='#', quote='"',
             decimal=decimal, sci=sci, imaginary_unit=imaginary_unit,
             usecols=usecols, skiprows=skiprows, max_rows=max_rows,
             converters=converters, dtype=dtype, dtypes=dtypes,
-            encoding=enc, filelike=False)
+            encoding=encoding, filelike=False)
 
     if ndmin is not None:
         # Handle non-None ndmin like np.loadtxt.  Might change this eventually?
