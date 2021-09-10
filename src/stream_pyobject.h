@@ -8,6 +8,9 @@
 #include "stream.h"
 
 stream *
-stream_python_file_by_line(PyObject *obj, PyObject *encoding);
+stream_python_file(PyObject *obj, PyObject *encoding);
+
+stream *
+stream_python_iterable(PyObject *obj, PyObject *encoding);
 
 #endif

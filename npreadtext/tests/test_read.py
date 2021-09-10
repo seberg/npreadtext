@@ -380,21 +380,11 @@ def test_read_from_generator_2():
 
 
 def test_read_from_bad_generator():
-    class BadFileLike:
-        lines = iter(["1,2", b"3,5", 12738])
-
-        def readline(self):
-            return next(self.lines)
-
-        def seek(self):
-            raise NotImplementedError
-
-        def tell(self):
-            raise NotImplementedError
+    data = ["1,2", b"3,5", 12738]
 
     with pytest.raises(TypeError,
-            match=r"object.readline\(\) returned non-string"):
-        read(BadFileLike(), dtype='i,i', delimiter=',')
+            match=r"non-string returned while reading data"):
+        read(data, dtype='i,i', delimiter=',')
 
 
 @pytest.mark.skipif(not HAS_REFCOUNT, reason="Python lacks refcounts")

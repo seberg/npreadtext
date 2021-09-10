@@ -1,12 +1,8 @@
 
 import os
 import codecs
-from collections.abc import Iterable
-import io
-from pathlib import Path
 import operator
 import numpy as np
-from ._filegen import FileGen, WrapFileLikeStrippingComments
 from . import _flatten_dtype
 from ._readtextmodule import _readtext_from_file_object
 
@@ -18,6 +14,24 @@ def _check_nonneg_int(value, name="argument"):
         raise TypeError(f"{name} must be an integer") from None
     if value < 0:
         raise ValueError(f"{name} must be nonnegative")
+
+
+def _preprocess_comments(iterable, comments, encoding):
+    """
+    Generator that consumes a line iterated iterable and strips out the
+    multiple (or multi-character) comments from lines.
+    This is a pre-processing step to achieve feature parity with loadtxt
+    (we assume that this feature is a nieche feature).
+    """
+    for line in iterable:
+        if isinstance(line, bytes):
+            # Need to handle conversion here, or the splitting would fail
+            line = line.decode(encoding)
+
+        for c in comments:
+            line = line.split(c, 1)[0]
+
+        yield line
 
 
 def read(file, *, delimiter=',', comment='#', quote='"',
@@ -183,12 +197,9 @@ def read(file, *, delimiter=',', comment='#', quote='"',
                 "when multiple comments or a multi-character comment is given, "
                 "quotes are not supported.  In this case the quote character "
                 "must be set to the empty string: `quote=''`.")
-
-        preprocess = lambda f: WrapFileLikeStrippingComments(f, encoding, comments)
     else:
         # No preprocessing necessary
         assert comments is None
-        preprocess = lambda x: x
 
     if len(imaginary_unit) != 1:
         raise ValueError('len(imaginary_unit) must be 1.')
@@ -214,76 +225,44 @@ def read(file, *, delimiter=',', comment='#', quote='"',
     else:
         dtypes = None
 
-    # XXX Reorganize these nested ifs...
-    # XXX Not everything is handled correctly at the moment.
-    #     A Path could contain a .gz file, for example...
+    if isinstance(file, os.PathLike):
+        fname = os.fspath(file)
+
+    # TODO: If we do no have a file-like loadtxt still has some encoding
+    #       stuff going on.  We should attempt to get the encoding from the
+    #       object.
+    enc = encoding.encode('ascii') if encoding is not None else None
+
+    # TODO: loadtxt actually uses `file + ''` to decide this
     if isinstance(file, str):
+        # We open a file-like object (using datasource).  Since we own the file
+        # we do not have to worry about how much we read.
         f = np.lib._datasource.open(file, 'rt', encoding=encoding)
         try:
-            f = preprocess(f)
-            enc = encoding.encode('ascii') if encoding is not None else None
-            arr = _readtext_from_file_object(f, delimiter=delimiter,
-                                             comment=comment, quote=quote,
-                                             decimal=decimal, sci=sci,
-                                             imaginary_unit=imaginary_unit,
-                                             usecols=usecols,
-                                             skiprows=skiprows,
-                                             max_rows=max_rows,
-                                             converters=converters,
-                                             dtype=dtype, dtypes=dtypes,
-                                             encoding=enc)
+            if comments is not None:
+                f = _preprocess_comments(iter(f), comments, encoding)
+            arr = _readtext_from_file_object(
+                    f, delimiter=delimiter, comment=comment, quote=quote,
+                    decimal=decimal, sci=sci, imaginary_unit=imaginary_unit,
+                    usecols=usecols, skiprows=skiprows, max_rows=max_rows,
+                    converters=converters, dtype=dtype, dtypes=dtypes,
+                    encoding=enc, filelike=comments is None)
         finally:
             f.close()
-    elif isinstance(file, Path):
-        with open(file, encoding=encoding) as f:
-            f = preprocess(f)
-            enc = encoding.encode('ascii') if encoding is not None else None
-            arr = _readtext_from_file_object(f, delimiter=delimiter,
-                                             comment=comment, quote=quote,
-                                             decimal=decimal, sci=sci,
-                                             imaginary_unit=imaginary_unit,
-                                             usecols=usecols,
-                                             skiprows=skiprows,
-                                             max_rows=max_rows,
-                                             converters=converters,
-                                             dtype=dtype, dtypes=dtypes,
-                                             encoding=enc)
-    # TODO: np.loadtxt states in an exception that it's only intended to work
-    # on generators, but in fact works on any iterable of strings/bytes-like
-    # objects.
-    # This logic correctly matches np.loadtxt behavior (on Linux at least)
-    # but feels fragile (e.g. IIRC `tempfile` objects on windows don't
-    # derive from IOBase.)
-    elif isinstance(file, Iterable) and not isinstance(file, io.IOBase):
-        if dtype is None:
-            raise ValueError('dtype must be given when reading from '
-                             'a generator')
-        # Wrap the generator in a class with a readline() method.
-        fg = preprocess(FileGen(iter(file)))
-        enc = encoding.encode('ascii') if encoding is not None else None
-        arr = _readtext_from_file_object(fg, delimiter=delimiter,
-                                         comment=comment, quote=quote,
-                                         decimal=decimal, sci=sci,
-                                         imaginary_unit=imaginary_unit,
-                                         usecols=usecols,
-                                         skiprows=skiprows,
-                                         max_rows=max_rows,
-                                         converters=converters,
-                                         dtype=dtype, dtypes=dtypes,
-                                         encoding=enc)
     else:
-        # Assume file is a file object.
-        file = preprocess(file)
-        enc = encoding.encode('ascii') if encoding is not None else None
-        arr = _readtext_from_file_object(file, delimiter=delimiter,
-                                         comment=comment,
-                                         quote=quote, decimal=decimal, sci=sci,
-                                         imaginary_unit=imaginary_unit,
-                                         usecols=usecols, skiprows=skiprows,
-                                         max_rows=max_rows,
-                                         converters=converters,
-                                         dtype=dtype, dtypes=dtypes,
-                                         encoding=enc)
+        # TODO: If the user passed an open file, loadtxt guarantees reading
+        #       only as far as necessary (and guarantees it does that).
+        #       However, that makes this path slower than the above one.
+        file = iter(file)
+        if comments is not None:
+            file = _preprocess_comments(file, comments, encoding)
+
+        arr = _readtext_from_file_object(
+            file, delimiter=delimiter, comment=comment, quote=quote,
+            decimal=decimal, sci=sci, imaginary_unit=imaginary_unit,
+            usecols=usecols, skiprows=skiprows, max_rows=max_rows,
+            converters=converters, dtype=dtype, dtypes=dtypes,
+            encoding=enc, filelike=False)
 
     if ndmin is not None:
         # Handle non-None ndmin like np.loadtxt.  Might change this eventually?
