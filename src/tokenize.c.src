@@ -237,8 +237,9 @@ tokenizer_core_@type@(tokenizer_state *ts, parser_config *const config)
 
         case TOKENIZE_GOTO_LINE_END:
             if (ts->buf_state != BUFFER_MAY_CONTAIN_NEWLINE) {
-                pos = (@type@ *)ts->end;  /* advance to next buffer */
+                pos = stop;  /* advance to next buffer */
                 ts->state = TOKENIZE_LINE_END;
+                break;
             }
             for (; pos < stop; pos++) {
                 if (*pos == '\r') {
@@ -247,8 +248,10 @@ tokenizer_core_@type@(tokenizer_state *ts, parser_config *const config)
                 }
                 else if (*pos == '\n') {
                     ts->state = TOKENIZE_LINE_END;
+                    break;
                 }
             }
+            pos++;
             break;
 
         case TOKENIZE_EAT_CRLF:
@@ -257,6 +260,7 @@ tokenizer_core_@type@(tokenizer_state *ts, parser_config *const config)
                 pos++;
             }
             ts->state = TOKENIZE_LINE_END;
+            break;
 
         default:
             assert(0);
@@ -308,8 +312,16 @@ tokenize(stream *s, tokenizer_state *ts, parser_config *const config)
 
         if (NPY_UNLIKELY(ts->pos >= ts->end)) {
             if (ts->buf_state == BUFFER_IS_LINEND &&
-                    ts->state == TOKENIZE_EAT_CRLF) {
-                /* Finished line, do not read anymore (also do not eat \n) */
+                    ts->state != TOKENIZE_QUOTED &&
+                    ts->state != TOKENIZE_CHECK_QUOTED) {
+                /*
+                 * Finished line, do not read anymore (also do not eat \n).
+                 * If we are in a quoted field and the "line" does not end with
+                 * a newline, the quoted field will be missing it right now.
+                 * TODO: We should probably just insert a "\n" character here,
+                 *       which is also  closer to what the python code did
+                 *       (either by setting pos/end or manually).
+                 */
                 goto finish;
             }
             /* fetch new data */

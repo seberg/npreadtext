@@ -128,7 +128,7 @@ _readtext_from_file_object(PyObject *self, PyObject *args, PyObject *kwargs)
                              "usecols", "skiprows",
                              "max_rows", "converters",
                              "dtype", "dtypes",
-                             "encoding", NULL};
+                             "encoding", "filelike", NULL};
     PyObject *file;
     Py_ssize_t skiprows = 0;
     Py_ssize_t max_rows = -1;
@@ -138,6 +138,7 @@ _readtext_from_file_object(PyObject *self, PyObject *args, PyObject *kwargs)
     PyObject *dtype = Py_None;
     PyObject *dtypes_obj = Py_None;
     PyObject *encoding = Py_None;
+    int filelike = 1;
 
     PyArray_Descr **dtypes = NULL;
 
@@ -161,7 +162,7 @@ _readtext_from_file_object(PyObject *self, PyObject *args, PyObject *kwargs)
     int num_dtype_fields;
 
     if (!PyArg_ParseTupleAndKeywords(
-            args, kwargs, "O|$O&O&O&O&O&O&OnnOOOO", kwlist,
+            args, kwargs, "O|$O&O&O&O&O&O&OnnOOOOp", kwlist,
             &file,
             &parse_control_character, &pc.delimiter,
             &parse_control_character, &pc.comment,
@@ -170,7 +171,7 @@ _readtext_from_file_object(PyObject *self, PyObject *args, PyObject *kwargs)
             &parse_control_character, &pc.sci,
             &parse_control_character, &pc.imaginary_unit,
             &usecols, &skiprows, &max_rows, &converters,
-            &dtype, &dtypes_obj, &encoding)) {
+            &dtype, &dtypes_obj, &encoding, &filelike)) {
         return NULL;
     }
 
@@ -198,7 +199,13 @@ _readtext_from_file_object(PyObject *self, PyObject *args, PyObject *kwargs)
     num_dtype_fields = PySequence_Fast_GET_SIZE(dtypes_obj);
     dtypes = (PyArray_Descr **)PySequence_Fast_ITEMS(dtypes_obj);
 
-    stream *s = stream_python_file_by_line(file, encoding);
+    stream *s;
+    if (filelike) {
+        s = stream_python_file(file, encoding);
+    }
+    else {
+        s = stream_python_iterable(file, encoding);
+    }
     if (s == NULL) {
         PyErr_Format(PyExc_RuntimeError, "Unable to access the file.");
         Py_DECREF(dtypes_obj);

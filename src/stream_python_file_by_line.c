@@ -1,13 +1,8 @@
-//
-// stream_python_file_by_line.c
-//
-// The public function defined in this file is
-//
-//     stream *stream_python_file_by_line(PyObject *obj)
-//
-// This function wraps a Python file object in a stream that
-// can be used by the text file reader.
-//
+/*
+ * C side structures to provide capabilities to read Python file like objects
+ * in chunks, or iterate through iterables with each result representing a
+ * single line of a file.
+ */
 
 #include <stdio.h>
 #include <string.h>
@@ -19,148 +14,125 @@
 
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
+#define NO_IMPORT_ARRAY
+#define PY_ARRAY_UNIQUE_SYMBOL npreadtext_ARRAY_API
+#include "numpy/arrayobject.h"
 
 #include "stream.h"
 
+#define READ_CHUNKSIZE 1 << 14
 
-typedef struct _python_file_by_line {
 
+typedef struct {
     /* The Python file object being read. */
     PyObject *file;
 
-    /* The `readline` attribute of the file object. */
-    PyObject *readline;
-
-    /* The `tell` attribute of the file object. */
-    PyObject *tell;
+    /* The `read` attribute of the file object. */
+    PyObject *read;
+    /* Amount to read each time we call `obj.read()` */
+    PyObject *chunksize;
 
     /* file position when the file_buffer was created. */
     off_t initial_file_pos;
 
-    int32_t line_number;
-
-    /* Boolean: has the end of the file been reached? */
-    bool reached_eof;
-
     /* Python str object holding the line most recently read from the file. */
-    PyObject *line;
-
-    int kind;
-    char *buffer;
-
-    /* Length of line */
-    Py_ssize_t linelen;
-
-    /* Unicode kind of line (see the Python docs about unicode) */
-    int unicode_kind;
-
-    /* The DATA associated with line. */
-    void *unicode_data;
-
-    /* Position in the buffer of the next character to read. */
-    Py_ssize_t current_buffer_pos;
+    PyObject *chunk;
 
     // encoding must be None or a bytes object holding an
     // ASCII-encoding string, e.g. b'utf-8'.
     PyObject *encoding;
 
-} python_file_by_line;
-
-#define FB(fb)  ((python_file_by_line *)fb)
-
+} python_chunks_from_file;
 
 
 /*
- *  int _fb_load(void *fb)
+ * Helper function to support byte objects as well as unicode strings.
  *
- *  Get data from the file into the buffer.
+ * NOTE: Steals a reference to `str` (although usually returns it unmodified).
  *
- *  Returns 0 on success.
- *  Returns STREAM_ERROR on error.
+ * TODO: Make encoding a char *, the utf-8 default also should be incorrect.
  */
-
-static int
-_fb_load(python_file_by_line *fb)
+static NPY_INLINE PyObject *
+process_stringlike(PyObject *str, PyObject *encoding)
 {
-    Py_XDECREF(fb->line);
-    fb->line = NULL;
-    fb->buffer = NULL;
-
-    PyObject *line = PyObject_CallFunctionObjArgs(fb->readline, NULL);
-    fb->line = line;
-    if (line == NULL) {
-        return -1;
-    }
-    if (PyBytes_Check(line)) {
-        PyObject *uline;
+    if (PyBytes_Check(str)) {
+        PyObject *ustr;
         char *enc;
-        // readline() returned bytes, so encode it.
-        // XXX if no encoding was specified, assume UTF-8.
-        if (fb->encoding == Py_None) {
+        if (encoding == Py_None) {
             enc = "utf-8";
         }
         else {
-            enc = PyBytes_AsString(fb->encoding);
+            enc = PyBytes_AsString(encoding);
         }
-        uline = PyUnicode_FromEncodedObject(line, enc, NULL);
-        if (uline == NULL) {
-            // XXX temporary printf
-            printf("_fb_load: failed to decode bytes object\n");
-            return -1;
+        ustr = PyUnicode_FromEncodedObject(str, enc, NULL);
+        if (ustr == NULL) {
+            return NULL;
         }
-        Py_SETREF(fb->line, uline);
+        Py_DECREF(str);
+        return ustr;
     }
-    else if (!PyUnicode_Check(line)) {
+    else if (!PyUnicode_Check(str)) {
         PyErr_SetString(PyExc_TypeError,
-                "object.readline() returned non-string");
-        Py_CLEAR(fb->line);
+                "non-string returned while reading data");
+        Py_DECREF(str);
+        return NULL;
+    }
+    return str;
+}
+
+
+static NPY_INLINE void
+buffer_info_from_unicode(PyObject *str, char **start, char **end, int *kind)
+{
+    Py_ssize_t length = PyUnicode_GET_LENGTH(str);
+    *kind = PyUnicode_KIND(str);
+
+    if (*kind == PyUnicode_1BYTE_KIND) {
+        *start = (char *)PyUnicode_1BYTE_DATA(str);
+    }
+    else if (*kind == PyUnicode_2BYTE_KIND) {
+        *start = (char *)PyUnicode_2BYTE_DATA(str);
+        length *= sizeof(Py_UCS2);
+    }
+    else if (*kind == PyUnicode_4BYTE_KIND) {
+        *start = (char *)PyUnicode_4BYTE_DATA(str);
+        length *= sizeof(Py_UCS4);
+    }
+    *end = *start + length;
+}
+
+
+static int
+fb_nextbuf(python_chunks_from_file *fb, char **start, char **end, int *kind)
+{
+    Py_XDECREF(fb->chunk);
+    fb->chunk = NULL;
+
+    PyObject *chunk = PyObject_CallFunctionObjArgs(fb->read, fb->chunksize, NULL);
+    if (chunk == NULL) {
         return -1;
     }
-
-    fb->linelen = PyUnicode_GET_LENGTH(fb->line);
-
-    fb->kind = PyUnicode_KIND(fb->line);
-    if (fb->kind == PyUnicode_1BYTE_KIND) {
-        fb->buffer = (char *)PyUnicode_1BYTE_DATA(fb->line);
+    fb->chunk = process_stringlike(chunk, fb->encoding);
+    if (fb->chunk == NULL) {
+        return -1;
     }
-    else if (fb->kind == PyUnicode_2BYTE_KIND) {
-        fb->buffer = (char *)PyUnicode_2BYTE_DATA(fb->line);
-        fb->linelen *= sizeof(Py_UCS2);
-    }
-    else if (fb->kind == PyUnicode_4BYTE_KIND) {
-        fb->buffer = (char *)PyUnicode_4BYTE_DATA(fb->line);
-        fb->linelen *= sizeof(Py_UCS4);
-    }
-
-    if (fb->linelen == 0) {
+    buffer_info_from_unicode(fb->chunk, start, end, kind);
+    if (*start == *end) {
         return BUFFER_IS_FILEEND;
     }
-    return BUFFER_IS_LINEND;
+    return BUFFER_MAY_CONTAIN_NEWLINE;
 }
 
 
 static int
-fb_nextbuf(python_file_by_line *fb, char **start, char **end, int *kind)
+fb_del(stream *strm)
 {
-    int status = _fb_load(fb);
+    python_chunks_from_file *fb = (python_chunks_from_file *)strm->stream_data;
 
-    *start = fb->buffer;
-    *end = fb->buffer + fb->linelen;
-    *kind = fb->kind;
-    return status;
-}
-
-
-static int
-stream_del(stream *strm)
-{
-    python_file_by_line *fb = (python_file_by_line *) (strm->stream_data);
-
-    // XXX Wrap the following clean up code in something more modular?
     Py_XDECREF(fb->file);
-    Py_XDECREF(fb->readline);
-    Py_XDECREF(fb->tell);
-    Py_XDECREF(fb->line);
+    Py_XDECREF(fb->read);
+    Py_XDECREF(fb->chunksize);
+    Py_XDECREF(fb->chunk);
 
     free(fb);
     free(strm);
@@ -170,32 +142,27 @@ stream_del(stream *strm)
 
 
 stream *
-stream_python_file_by_line(PyObject *obj, PyObject *encoding)
+stream_python_file(PyObject *obj, PyObject *encoding)
 {
-    python_file_by_line *fb;
+    python_chunks_from_file *fb;
     stream *strm;
-    PyObject *func;
 
-    fb = (python_file_by_line *) malloc(sizeof(python_file_by_line));
-    //printf("fb = %lld\n", fb);
+    fb = (python_chunks_from_file *) malloc(sizeof(python_chunks_from_file));
     if (fb == NULL) {
-        // XXX handle the errors here and below properly.
-        fprintf(stderr, "stream_file: malloc() failed.\n");
+        PyErr_NoMemory();
         return NULL;
     }
 
-    fb->buffer = NULL;
-
     fb->file = NULL;
-    fb->readline = NULL;
-    fb->tell = NULL;
-    fb->line = NULL;
+    fb->read = NULL;
+    fb->chunksize = NULL;
+    fb->chunk = NULL;
+    // TODO: Encoding is borrowed, that is bad.
     fb->encoding = encoding;
 
     strm = (stream *) malloc(sizeof(stream));
     if (strm == NULL) {
-        // XXX Don't print to stderr!
-        fprintf(stderr, "stream_file: malloc() failed.\n");
+        PyErr_NoMemory();
         free(fb);
         return NULL;
     }
@@ -203,39 +170,122 @@ stream_python_file_by_line(PyObject *obj, PyObject *encoding)
     fb->file = obj;
     Py_INCREF(fb->file);
 
-    func = PyObject_GetAttrString(obj, "readline");
-    if (!func) {
+    fb->read = PyObject_GetAttrString(obj, "read");
+    if (fb->read == NULL) {
         goto fail;
     }
-    fb->readline = func;
-    Py_INCREF(fb->readline);
-
-    func = PyObject_GetAttrString(obj, "tell");
-    if (!func) {
+    fb->chunksize = PyLong_FromLong(READ_CHUNKSIZE);
+    if (fb->chunksize == NULL) {
         goto fail;
     }
-    fb->tell = func;
-    Py_INCREF(fb->tell);
-
-    fb->line_number = 1;
-    fb->linelen = 0;
-
-    fb->current_buffer_pos = 0;
-    //fb->last_pos = 0;
-    fb->reached_eof = 0;
 
     strm->stream_data = (void *)fb;
     strm->stream_nextbuf = &fb_nextbuf;
-    strm->stream_close = &stream_del;
+    strm->stream_close = &fb_del;
 
     return strm;
 
 fail:
-    Py_XDECREF(fb->file);
-    Py_XDECREF(fb->readline);
-    Py_XDECREF(fb->tell);
+    fb_del(strm);
+    return NULL;
+}
 
-    free(fb);
+
+/*
+ * Stream from a Python iterable by interpreting each item as a line in a file
+ */
+typedef struct {
+    /* The Python file object being read. */
+    PyObject *iterator;
+
+    /* Python str object holding the line most recently fetched */
+    PyObject *line;
+
+    // encoding must be None or a bytes object holding an
+    // ASCII-encoding string, e.g. b'utf-8'.
+    PyObject *encoding;
+
+} python_lines_from_iterator;
+
+
+static int
+it_del(stream *strm)
+{
+    python_lines_from_iterator *it = (python_lines_from_iterator *)strm->stream_data;
+
+    Py_XDECREF(it->iterator);
+    Py_XDECREF(it->line);
+
+    free(it);
     free(strm);
+
+    return 0;
+}
+
+
+static int
+it_nextbuf(python_lines_from_iterator *it, char **start, char **end, int *kind)
+{
+    Py_XDECREF(it->line);
+    it->line = NULL;
+
+    PyObject *line = PyIter_Next(it->iterator);
+    if (line == NULL) {
+        if (PyErr_Occurred()) {
+            return -1;
+        }
+        *start = NULL;
+        *end = NULL;
+        return BUFFER_IS_FILEEND;
+    }
+    it->line = process_stringlike(line, it->encoding);
+    if (it->line == NULL) {
+        return -1;
+    }
+
+    buffer_info_from_unicode(it->line, start, end, kind);
+    return BUFFER_IS_LINEND;
+}
+
+
+stream *
+stream_python_iterable(PyObject *obj, PyObject *encoding)
+{
+    python_lines_from_iterator *it;
+    stream *strm;
+
+    it = (python_lines_from_iterator *)malloc(sizeof(*it));
+    if (it == NULL) {
+        PyErr_NoMemory();
+        return NULL;
+    }
+
+    it->iterator = NULL;
+    it->line = NULL;
+    // TODO: Encoding is borrowed, that is bad.
+    it->encoding = encoding;
+
+    strm = (stream *) malloc(sizeof(stream));
+    if (strm == NULL) {
+        PyErr_NoMemory();
+        free(it);
+        return NULL;
+    }
+    if (!PyIter_Check(obj)) {
+        PyErr_SetString(PyExc_TypeError,
+                "error reading from object, expected an iterable.");
+        goto fail;
+    }
+    Py_INCREF(obj);
+    it->iterator = obj;
+
+    strm->stream_data = (void *)it;
+    strm->stream_nextbuf = &it_nextbuf;
+    strm->stream_close = &it_del;
+
+    return strm;
+
+fail:
+    it_del(strm);
     return NULL;
 }
