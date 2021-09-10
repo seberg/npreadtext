@@ -2,7 +2,6 @@
 import os
 import operator
 import numpy as np
-from . import _flatten_dtype
 from ._readtextmodule import _readtext_from_file_object
 
 
