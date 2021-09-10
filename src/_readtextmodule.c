@@ -13,44 +13,10 @@
 #include "parser_config.h"
 #include "stream_python_file_by_line.h"
 #include "field_types.h"
-#include "analyze.h"
 #include "rows.h"
 #include "error_types.h"
 
 #define LOADTXT_COMPATIBILITY true
-
-
-static void
-raise_analyze_exception(int nrows, char *filename)
-{
-    if (nrows == ANALYZE_OUT_OF_MEMORY) {
-        if (filename) {
-            PyErr_Format(PyExc_MemoryError,
-                         "Out of memory while analyzing '%s'", filename);
-        } else {
-            PyErr_Format(PyExc_MemoryError,
-                         "Out of memory while analyzing file.");
-        }
-    }
-    else if (nrows == ANALYZE_FILE_ERROR) {
-        if (filename) {
-            PyErr_Format(PyExc_RuntimeError,
-                         "File error while analyzing '%s'", filename);
-        } else {
-            PyErr_Format(PyExc_RuntimeError,
-                         "File error while analyzing file.");
-        }
-    }
-    else {
-        if (filename) {
-            PyErr_Format(PyExc_RuntimeError,
-                         "Unknown error when analyzing '%s'", filename);
-        } else {
-            PyErr_Format(PyExc_RuntimeError,
-                         "Unknown error when analyzing file.");
-        }
-    }
-}
 
 
 //
@@ -85,58 +51,27 @@ _readtext_from_stream(stream *s, char *filename, parser_config *pc,
     field_type *ft = NULL;
 
     bool homogeneous;
-    npy_intp shape[2];
 
-    if (dtype == Py_None) {
-        // Make the first pass of the file to analyze the data type
-        // and count the number of rows.
-        // analyze() will assign num_fields and create the ft array,
-        // based on the types of the data that it finds in the file.
-        // XXX Note that analyze() does not use the usecols data--it
-        // analyzes (and fills in ft for) all the columns in the file.
-        nrows = analyze(s, pc, skiprows, -1, &num_fields, &ft);
-        if (nrows < 0) {
-            raise_analyze_exception(nrows, filename);
-            return NULL;
-        }
-        stream_seek(s, 0);
+    /*
+     * If dtypes[0] is dtype the input was not structured and the result
+     * is considered "homogeneous" and we have to discover the number of
+     * columns/
+     */
+    out_dtype = (PyArray_Descr *)dtype;
+    Py_INCREF(out_dtype);
 
-        homogeneous = field_types_is_homogeneous(num_fields, ft);
-        if (field_types_init_descriptors(num_fields, ft) < 0) {
-            goto finish;
-        }
-        if (homogeneous) {
-            out_dtype = ft[0].descr;
-            Py_INCREF(out_dtype);
-        }
-        else {
-            out_dtype = field_types_to_descr(num_fields, ft);
-            if (out_dtype == NULL) {
-                goto finish;
-            }
-        }
+    /* TODO: Ridiculous, should just pass it in (or reuse num_fields) */
+    homogeneous = num_dtype_fields == 1 && (out_dtype == dtypes[0]);
+
+    // A dtype was given.
+    num_fields = num_dtype_fields;
+    ft = field_types_create(num_fields, dtypes);
+    if (ft == NULL) {
+        PyErr_Format(PyExc_MemoryError, "out of memory");
+        return NULL;
     }
-    else {
-        /*
-         * If dtypes[0] is dtype the input was not structured and the result
-         * is considered "homogeneous" and we have to discover the number of
-         * columns/
-         */
-        out_dtype = (PyArray_Descr *)dtype;
-        Py_INCREF(out_dtype);
+    nrows = max_rows;
 
-        /* TODO: Ridiculous, should just pass it in (or reuse num_fields) */
-        homogeneous = num_dtype_fields == 1 && (out_dtype == dtypes[0]);
-
-        // A dtype was given.
-        num_fields = num_dtype_fields;
-        ft = field_types_create(num_fields, dtypes);
-        if (ft == NULL) {
-            PyErr_Format(PyExc_MemoryError, "out of memory");
-            return NULL;
-        }
-        nrows = max_rows;
-    }
     if (usecols == Py_None) {
         ncols = num_fields;
         cols = NULL;
@@ -146,41 +81,14 @@ _readtext_from_stream(stream *s, char *filename, parser_config *pc,
         cols = PyArray_DATA(usecols);
     }
 
-    // XXX In the one-pass case, we don't have nrows.
-    shape[0] = nrows;
-    if (homogeneous) {
-        shape[1] = ncols;
-    }
+    Py_ssize_t num_rows = nrows;
 
-    if (dtype == Py_None) {
-        int ndim = homogeneous ? 2 : 1;
-
-        Py_INCREF(out_dtype);
-        PyArrayObject *tmp_arr = (PyArrayObject *)PyArray_SimpleNewFromDescr(
-                ndim, shape, out_dtype);
-        if (tmp_arr == NULL) {
-            goto finish;
-        }
-        Py_ssize_t num_rows = nrows;
-        arr = read_rows(
-                s, &num_rows, num_fields, ft, pc,
-                ncols, cols, skiprows, converters,
-                tmp_arr, out_dtype, homogeneous);
-        Py_DECREF(tmp_arr);  /* should be identical to `arr`, but we own it */
-        if (arr == NULL) {
-            goto finish;
-        }
-    }
-    else {
-        Py_ssize_t num_rows = nrows;
-
-        arr = read_rows(
-                s, &num_rows, num_fields, ft, pc,
-                ncols, cols, skiprows, converters,
-                NULL, out_dtype, homogeneous);
-        if (arr == NULL) {
-            goto finish;
-        }
+    arr = read_rows(
+            s, &num_rows, num_fields, ft, pc,
+            ncols, cols, skiprows, converters,
+            NULL, out_dtype, homogeneous);
+    if (arr == NULL) {
+        goto finish;
     }
 
   finish:
@@ -274,20 +182,21 @@ _readtext_from_file_object(PyObject *self, PyObject *args, PyObject *kwargs)
     }
 
     /*
-     * TODO: This needs some hefty input validation!
+     * TODO: This needs some hefty input validation, for dtype and dtypes
+     *       (Potentially, move creation to dtypes to here: even if the
+     *       implementation remains in Python.)
      */
-    if (dtypes_obj == Py_None) {
-        assert(dtype == Py_None);
-        num_dtype_fields = -1;
+    if (!PyArray_DescrCheck(dtype) || dtypes_obj == Py_None) {
+        PyErr_SetString(PyExc_TypeError,
+                "internal error: dtype must be provided and be a NumPy dtype");
+        return NULL;
     }
-    else {
-        dtypes_obj = PySequence_Fast(dtypes_obj, "dtypes not a sequence :(");
-        if (dtypes_obj == NULL) {
-            return NULL;
-        }
-        num_dtype_fields = PySequence_Fast_GET_SIZE(dtypes_obj);
-        dtypes = (PyArray_Descr **)PySequence_Fast_ITEMS(dtypes_obj);
+    dtypes_obj = PySequence_Fast(dtypes_obj, "dtypes not a sequence :(");
+    if (dtypes_obj == NULL) {
+        return NULL;
     }
+    num_dtype_fields = PySequence_Fast_GET_SIZE(dtypes_obj);
+    dtypes = (PyArray_Descr **)PySequence_Fast_ITEMS(dtypes_obj);
 
     stream *s = stream_python_file_by_line(file, encoding);
     if (s == NULL) {
@@ -300,7 +209,7 @@ _readtext_from_file_object(PyObject *self, PyObject *args, PyObject *kwargs)
                                 converters,
                                 dtype, dtypes, num_dtype_fields);
     Py_DECREF(dtypes_obj);
-    stream_close(s, RESTORE_NOT);
+    stream_close(s);
     return arr;
 }
 

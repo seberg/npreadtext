@@ -33,7 +33,7 @@ def configuration(parent_package='', top_path=None):
     config = Configuration(None, parent_package, top_path)
     # config.add_data_dir('tests')
     config.add_subpackage('npreadtext')
-    cfiles = ['_readtextmodule.c', 'analyze.c', 'type_inference.c',
+    cfiles = ['_readtextmodule.c',
               'rows.c', 'tokenize.c.src',
               'conversions.c', 'str_to_int.c', 'str_to_double.c',
               'pow10table.c',
