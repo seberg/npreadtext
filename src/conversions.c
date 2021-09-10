@@ -233,8 +233,15 @@ to_string(PyArray_Descr *descr,
 
     for (size_t i = 0; i < length; i++) {
         if (c < end) {
-            // TODO: This cast is wrong as it really should be encoding/error?!
-            dataptr[i] = (char)(*c);
+            /*
+             * loadtxt assumed latin1, which is compatible with UCS1 (first
+             * 256 unicode characters).
+             */
+            if (NPY_UNLIKELY(*c > 255)) {
+                /* TODO: Was UnicodeDecodeError, is unspecific error good? */
+                return -1;
+            }
+            dataptr[i] = (Py_UCS1)(*c);
             c++;
         }
         else {

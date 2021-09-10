@@ -413,3 +413,13 @@ def test_bad_encoding():
 
     with pytest.raises(LookupError):
         read(data, encoding="this encoding is invalid!")
+
+
+def test_character_not_bytes_compatible():
+    # Test a character which cannot be encoded as "S".  Note that loadtxt
+    # would try `string.encode("latin1")` throwing a slightly more informative
+    # `UnicodeDecodeError`.
+    data = ["–"]
+
+    with pytest.raises(ValueError):
+        read(data, dtype="S5")
