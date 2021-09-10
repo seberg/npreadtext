@@ -41,7 +41,7 @@ typedef struct _field_type {
     //   needed for the 'S' or 'U' type codes, but it is expected to be
     //   correctly filled in for all the types.
     size_t itemsize;
-    // typecode used currently during discovery:
+    // typecode (mostly unused now, was used during additional analysis step)
     //     * : undefined field type (during auto-discovery)
     //     i : integer (byte to long long)
     //     u : unsigned integer (ubyte to unsigned long long)
@@ -60,23 +60,5 @@ field_types_clear(int num_field_types, field_type *ft);
 
 field_type *
 field_types_create(int num_field_types, PyArray_Descr *dtypes[]);
-
-void
-field_types_fprintf(FILE *out, int num_field_types, const field_type *ft);
-
-bool
-field_types_is_homogeneous(int num_field_types, const field_type *ft);
-
-int32_t
-field_types_total_size(int num_field_types, const field_type *ft);
-
-int
-field_types_grow(int new_num_field_types, int num_field_types, field_type **ft);
-
-int
-field_types_init_descriptors(int num_field_types, field_type *ft);
-
-PyArray_Descr *
-field_types_to_descr(int num_fields, field_type *ft);
 
 #endif

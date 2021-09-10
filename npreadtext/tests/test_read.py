@@ -97,33 +97,32 @@ def test_decimal_is_comma():
 
 def test_quoted_field():
     filename = _get_full_name('quoted_field.csv')
-    a = read(filename)
-    expected_dtype = np.dtype([('f0', 'S8'), ('f1', np.float64)])
-    assert a.dtype == expected_dtype
+    dtype = np.dtype([('f0', 'S8'), ('f1', np.float64)])
+
+    a = read(filename, dtype=dtype)
+    assert a.dtype == dtype
     expected = np.array([('alpha, x', 2.5),
                          ('beta, x', 4.5),
-                         ('gamma, x', 5.0)], dtype=expected_dtype)
+                         ('gamma, x', 5.0)], dtype=dtype)
     assert_array_equal(a, expected)
 
 
-@pytest.mark.parametrize('explicit_dtype', [False, True])
 @pytest.mark.parametrize('skiprows', [0, 1, 3])
-def test_dtype_and_skiprows(explicit_dtype: bool, skiprows: int):
+def test_dtype_and_skiprows(skiprows: int):
     filename = _get_full_name('mixed_types1.dat')
 
-    expected_dtype = np.dtype([('f0', np.uint16),
-                               ('f1', np.float64),
-                               ('f2', 'S7'),
-                               ('f3', np.int8)])
+    dtype = np.dtype([('f0', np.uint16),
+                      ('f1', np.float64),
+                      ('f2', 'S7'),
+                      ('f3', np.int8)])
     expected = np.array([(1000, 2.4, "alpha", -34),
                          (2000, 3.1, "beta", 29),
                          (3500, 9.9, "gamma", 120),
                          (4090, 8.1, "delta", 0),
                          (5001, 4.4, "epsilon", -99),
-                         (6543, 7.8, "omega", -1)], dtype=expected_dtype)
+                         (6543, 7.8, "omega", -1)], dtype=dtype)
 
-    dt = expected_dtype if explicit_dtype else None
-    a = read(filename, quote="'", delimiter=';', skiprows=skiprows, dtype=dt)
+    a = read(filename, dtype=dtype, quote="'", delimiter=';', skiprows=skiprows)
     assert_array_equal(a, expected[skiprows:])
 
 
@@ -155,16 +154,16 @@ def test_ndmin_single_row_or_col(fn, shape):
     data = [1, 2, 3, 4, 5]
     arr2d = np.array(data).reshape(shape)
 
-    a = read(filename, delimiter=' ')
+    a = read(filename, dtype=int, delimiter=' ')
     assert_array_equal(a, arr2d)
 
-    a = read(filename, delimiter=' ', ndmin=0)
+    a = read(filename, dtype=int, delimiter=' ', ndmin=0)
     assert_array_equal(a, data)
 
-    a = read(filename, delimiter=' ', ndmin=1)
+    a = read(filename, dtype=int, delimiter=' ', ndmin=1)
     assert_array_equal(a, data)
 
-    a = read(filename, delimiter=' ', ndmin=2)
+    a = read(filename, dtype=int, delimiter=' ', ndmin=2)
     assert_array_equal(a, arr2d)
 
 
@@ -176,17 +175,18 @@ def test_bad_ndmin(badval):
 
 def test_unpack_structured():
     filename = _get_full_name('mixed_types1.dat')
-    expected_dtype = np.dtype([('f0', np.uint16),
-                               ('f1', np.float64),
-                               ('f2', 'S7'),
-                               ('f3', np.int8)])
+    dtype = np.dtype([('f0', np.uint16),
+                      ('f1', np.float64),
+                      ('f2', 'S7'),
+                      ('f3', np.int8)])
     expected = np.array([(1000, 2.4, "alpha", -34),
                          (2000, 3.1, "beta", 29),
                          (3500, 9.9, "gamma", 120),
                          (4090, 8.1, "delta", 0),
                          (5001, 4.4, "epsilon", -99),
-                         (6543, 7.8, "omega", -1)], dtype=expected_dtype)
-    a, b, c, d = read(filename, delimiter=';', quote="'", unpack=True)
+                         (6543, 7.8, "omega", -1)], dtype=dtype)
+    a, b, c, d = read(
+            filename, dtype=dtype, delimiter=';', quote="'", unpack=True)
     assert_array_equal(a, expected['f0'])
     assert_array_equal(b, expected['f1'])
     assert_array_equal(c, expected['f2'])
@@ -209,18 +209,15 @@ def test_blank_lines_spaces_delimit(ws):
     #       should just be implemented closer to Python).
     txt = StringIO(
         f'1 2{ws}30\n\n4 5 60\n  {ws}  \n7 8 {ws} 90\n  # comment\n3 2 1')
-    a = read(txt, delimiter='', comment="#")
-    assert_equal(a.dtype, np.uint8)
-    assert_equal(a, np.array([[1, 2, 30], [4, 5, 60], [7, 8, 90], [3, 2, 1]],
-                             dtype=np.uint8))
+    a = read(txt, dtype=int, delimiter='', comment="#")
+    assert_equal(a, np.array([[1, 2, 30], [4, 5, 60], [7, 8, 90], [3, 2, 1]]))
 
 
 def test_blank_lines_normal_delimiter():
     txt = StringIO('1,2,30\n\n4,5,60\n\n7,8,90\n# comment\n3,2,1')
-    a = read(txt, delimiter=',', comment="#")
-    assert_equal(a.dtype, np.uint8)
-    assert_equal(a, np.array([[1, 2, 30], [4, 5, 60], [7, 8, 90], [3, 2, 1]],
-                             dtype=np.uint8))
+    a = read(txt, dtype=int, delimiter=',', comment="#")
+    assert_equal(a, np.array([[1, 2, 30], [4, 5, 60], [7, 8, 90], [3, 2, 1]]))
+
 
 def test_quoted_field_is_not_empty():
     txt = StringIO('1\n\n"4"\n""')
@@ -359,16 +356,6 @@ def test_complex(dt, imaginary_unit, with_parens):
     a = read(StringIO(s), dtype=dt, imaginary_unit=imaginary_unit)
     expected = np.array([[1.0-2.5j, 3.75, 7-5j], [4.0, -1900j, 0]], dtype=dt)
     assert_equal(a, expected)
-
-
-def test_complex_analyze():
-    s = '3,2.0,199\n4,1.0+2.0j,225\n2,9.5-3.0j,432'
-    a = read(StringIO(s))
-    dt = np.dtype([('f0', np.uint8), ('f1', np.complex128), ('f2', np.uint16)])
-    assert a.dtype == dt
-    assert_equal(a['f0'], [3, 4, 2])
-    assert_equal(a['f1'], [2.0, 1+2j, 9.5-3j])
-    assert_equal(a['f2'], [199, 225, 432])
 
 
 def test_read_from_generator_1():

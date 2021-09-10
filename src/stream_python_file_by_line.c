@@ -31,9 +31,6 @@ typedef struct _python_file_by_line {
     /* The `readline` attribute of the file object. */
     PyObject *readline;
 
-    /* The `seek` attribute of the file object. */
-    PyObject *seek;
-
     /* The `tell` attribute of the file object. */
     PyObject *tell;
 
@@ -155,48 +152,13 @@ fb_nextbuf(python_file_by_line *fb, char **start, char **end, int *kind)
 
 
 static int
-fb_seek(void *fb, long int pos)
-{
-    int status = 0;
-
-    PyObject *args = Py_BuildValue("(n)", (Py_ssize_t) pos);
-    // XXX Check for error, and
-    // DECREF where appropriate...
-    PyObject *result = PyObject_Call(FB(fb)->seek, args, NULL);
-    if (result == NULL) {
-        return -1;
-    }
-    Py_DECREF(result);
-    // XXX Check for error!
-    FB(fb)->line_number = 1;
-    //FB(fb)->buffer_file_pos = FB(fb)->initial_file_pos;
-    FB(fb)->current_buffer_pos = 0;
-    //FB(fb)->last_pos = 0;
-    FB(fb)->reached_eof = false;
-    return status;
-}
-
-
-static int
-stream_del(stream *strm, int restore)
+stream_del(stream *strm)
 {
     python_file_by_line *fb = (python_file_by_line *) (strm->stream_data);
-
-    if (restore == RESTORE_INITIAL) {
-        // XXX
-        stream_seek(strm, SEEK_SET);
-        //fseek(FB(fb)->file, FB(fb)->initial_file_pos, SEEK_SET);
-    }
-    else if (restore == RESTORE_FINAL) {
-        // XXX
-        stream_seek(strm, SEEK_SET);
-        //fseek(FB(fb)->file, FB(fb)->buffer_file_pos + FB(fb)->current_buffer_pos, SEEK_SET);
-    }
 
     // XXX Wrap the following clean up code in something more modular?
     Py_XDECREF(fb->file);
     Py_XDECREF(fb->readline);
-    Py_XDECREF(fb->seek);
     Py_XDECREF(fb->tell);
     Py_XDECREF(fb->line);
 
@@ -226,7 +188,6 @@ stream_python_file_by_line(PyObject *obj, PyObject *encoding)
 
     fb->file = NULL;
     fb->readline = NULL;
-    fb->seek = NULL;
     fb->tell = NULL;
     fb->line = NULL;
     fb->encoding = encoding;
@@ -249,13 +210,6 @@ stream_python_file_by_line(PyObject *obj, PyObject *encoding)
     fb->readline = func;
     Py_INCREF(fb->readline);
 
-    func = PyObject_GetAttrString(obj, "seek");
-    if (!func) {
-        goto fail;
-    }
-    fb->seek = func;
-    Py_INCREF(fb->seek);
-
     func = PyObject_GetAttrString(obj, "tell");
     if (!func) {
         goto fail;
@@ -272,7 +226,6 @@ stream_python_file_by_line(PyObject *obj, PyObject *encoding)
 
     strm->stream_data = (void *)fb;
     strm->stream_nextbuf = &fb_nextbuf;
-    strm->stream_seek = &fb_seek;
     strm->stream_close = &stream_del;
 
     return strm;
@@ -280,7 +233,6 @@ stream_python_file_by_line(PyObject *obj, PyObject *encoding)
 fail:
     Py_XDECREF(fb->file);
     Py_XDECREF(fb->readline);
-    Py_XDECREF(fb->seek);
     Py_XDECREF(fb->tell);
 
     free(fb);

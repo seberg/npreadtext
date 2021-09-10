@@ -24,7 +24,7 @@ def read(file, *, delimiter=',', comment='#', quote='"',
          decimal='.', sci='E', imaginary_unit='j',
          usecols=None, skiprows=0,
          max_rows=None, converters=None, ndmin=None, unpack=False,
-         dtype=None, encoding=None):
+         dtype=np.float64, encoding=None):
     r"""
     Read a NumPy array from a text file.
 
@@ -68,9 +68,9 @@ def read(file, *, delimiter=',', comment='#', quote='"',
         If True, the returned array is transposed, so that arguments may be
         unpacked using ``x, y, z = read(...)``.  When used with a structured
         data-type, arrays are returned for each field.  Default is False.
-    dtype : numpy data type, optional
-        If not given, the data type is inferred from the values found
-        in the file.
+    dtype : numpy data type
+        A NumPy dtype instance, can be a structured dtype to map to the
+        columns of the file.
     encoding : str, optional
         Specifies the encoding of the input file.
 
@@ -110,8 +110,9 @@ def read(file, *, delimiter=',', comment='#', quote='"',
     # This will raise a LookupError if the encoding is unknown.
     codecs.lookup(encoding)
 
-    if dtype is not None and not isinstance(dtype, np.dtype):
-        dtype = np.dtype(dtype)
+    if dtype is None:
+        raise TypeError("a dtype must be provided.")
+    dtype = np.dtype(dtype)
 
     # FIXME: Temporary hack just to get some loadtxt test to pass!
     ##if dtype == np.dtype('U0'):
