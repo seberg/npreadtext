@@ -153,9 +153,6 @@ _readtext_from_file_object(PyObject *self, PyObject *args, PyObject *kwargs)
         .allow_embedded_newline = true,
         .delimiter_is_whitespace = false,
         .ignore_leading_whitespace = false,
-        .ignore_trailing_spaces = false,
-        .ignore_blank_lines = true,
-        .strict_num_fields = false,
     };
 
     PyObject *arr = NULL;
