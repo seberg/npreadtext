@@ -7,19 +7,17 @@
 
 
 typedef struct _parser_config {
-
     /*
      *  Field delimiter character.
      *  Typically ',', ' ', '\t', or '\0'.
-     *  '\0' means each contiguous span of spaces is one delimiter.
      */
     Py_UCS4 delimiter;
 
     /*
      *  Character used to quote fields.
-     *  Typically '"' or '\''.
-     *  To disable the special handling of a quote character, set this to a
-     *  value that doesn't occur in the input file (e.g. '\0').
+     *  Typically '"' or "'".  To disable quoting we set this to UINT_MAX
+     *  (which is not a valid unicode character and thus cannot occur in the
+     *  file; the same is used for all other characters if necessary).
      */
     Py_UCS4 quote;
 
@@ -34,19 +32,6 @@ typedef struct _parser_config {
      * for splitting (same as `string.split()` in Python).
      */
     bool delimiter_is_whitespace;
-
-    /*
-     *  Ignore spaces at the end of a field.  Only relevant for
-     *  text fields, and only when the delimiter is not whitespace.
-     *  Spaces in quotes are never ignored.
-     */
-    bool ignore_trailing_spaces;
-
-    /*
-     *  Ignore lines that are all spaces.  Only used when the delimiter
-     *  is \0.
-     */
-    bool ignore_blank_lines;
 
     /*
      *  Character(s) that indicates the start of a comment.
@@ -83,20 +68,6 @@ typedef struct _parser_config {
      *  The imaginary unit character. Default is `j`.
      */
     Py_UCS4 imaginary_unit;
-
-    /*
-     *  If strict_num_fields is True, all rows in the file are expected
-     *  to have the same number of fields.  When analyzing a file, if any row
-     *  is found to have a different number of fields than the first row, an error
-     *  is returned.  When the data types of all the fields are provided by the
-     *  user, an error is returned if any row doesn't have the same number of fields.
-     *
-     *  If strict_num_fields is False, then if the field is parsed automatically,
-     *  the number of fields of the result will be the maximum of the number of
-     *  fields in the rows.  Rows with fewer than the maximum will be extended
-     *  with missing values.
-     */
-     bool strict_num_fields;
 
      /*
       *  If true, when an integer dtype is given, the field is allowed

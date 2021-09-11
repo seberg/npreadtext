@@ -51,7 +51,7 @@ next_size(size_t size) {
 /**begin repeat
  * #type = Py_UCS1, Py_UCS2, Py_UCS4#
  */
-static int
+static NPY_INLINE int
 copy_to_field_buffer_@type@(tokenizer_state *ts,
         const @type@ *chunk_start, const @type@ *chunk_end)
 {
