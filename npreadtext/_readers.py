@@ -222,7 +222,7 @@ def read(file, *, delimiter=',', comment='#', quote='"',
         dtypes = None
 
     if isinstance(file, os.PathLike):
-        fname = os.fspath(file)
+        file = os.fspath(file)
 
     # TODO: loadtxt actually uses `file + ''` to decide this
     if isinstance(file, str):
