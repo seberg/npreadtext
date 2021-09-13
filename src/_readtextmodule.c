@@ -162,7 +162,7 @@ _readtext_from_file_object(PyObject *self, PyObject *args, PyObject *kwargs)
     int num_dtype_fields;
 
     if (!PyArg_ParseTupleAndKeywords(
-            args, kwargs, "O|$O&O&O&O&O&O&OnnOOOspp", kwlist,
+            args, kwargs, "O|$O&O&O&O&O&O&OnnOOOzpp", kwlist,
             &file,
             &parse_control_character, &pc.delimiter,
             &parse_control_character, &pc.comment,
