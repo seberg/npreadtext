@@ -78,47 +78,88 @@ max_token_len(
 
 
 /*
- *  Create the array of converter functions from the Python converters dict.
+ *  Create the array of converter functions from the Python converters.
  */
 PyObject **
 create_conv_funcs(
         PyObject *converters, int32_t *usecols, int num_usecols,
         int current_num_fields)
 {
-    PyObject **conv_funcs = NULL;
-
-    conv_funcs = calloc(num_usecols, sizeof(PyObject *));
+    PyObject **conv_funcs = PyMem_Calloc(num_usecols, sizeof(PyObject *));
     if (conv_funcs == NULL) {
         PyErr_NoMemory();
         return NULL;
     }
-    for (int j = 0; j < num_usecols; ++j) {
-        PyObject *key;
-        PyObject *func;
-        // k is the column index of the field in the file.
-        size_t k;
-        if (usecols == NULL) {
-            k = j;
+    if (converters == Py_None) {
+        return conv_funcs;
+    }
+    else if (!PyDict_Check(converters)) {
+        PyErr_SetString(PyExc_TypeError,
+                "converters must be a dictionary mapping columns to converter "
+                "functions.");
+        return NULL;
+    }
+
+    PyObject *key, *value;
+    Py_ssize_t pos = 0;
+    while (PyDict_Next(converters, &pos, &key, &value)) {
+        Py_ssize_t column = PyNumber_AsSsize_t(key, PyExc_IndexError);
+        if (column == -1 && PyErr_Occurred()) {
+            PyErr_Format(PyExc_TypeError,
+                    "keys of the converters dictionary must be integers; "
+                    "got %.100R", key);
+            goto error;
+        }
+        if (usecols != NULL) {
+            /*
+             * This code searches for the corresponding usecol.  It is
+             * identical to the legacy usecols code, which has two weaknesses:
+             * 1. It fails for duplicated usecols only setting converter for
+             *    the first one.
+             * 2. It fails e.g. if usecols uses negative indexing and
+             *    converters does not.  (This is a feature, since it allows
+             *    us to correctly normalize converters to result column here.)
+             */
+            int i = 0;
+            for (; i < num_usecols; i++) {
+                if (column == usecols[i]) {
+                    column = i;
+                    break;
+                }
+            }
+            if (i == num_usecols) {
+                continue;  /* ignore unused converter */
+            }
         }
         else {
-            k = usecols[j];
+            if (column < -current_num_fields || column >= current_num_fields) {
+                PyErr_Format(PyExc_ValueError,
+                        "converter specified for column %zd, which is invalid "
+                        "for the number of fields %d.",
+                        column, current_num_fields);
+                goto error;
+            }
+            if (column < 0) {
+                column += current_num_fields;
+            }
         }
-
-        // XXX Check for failure of PyLong_FromSsize_t...
-        key = PyLong_FromSsize_t((Py_ssize_t) k);
-        func = PyDict_GetItem(converters, key);
-        Py_DECREF(key);
-        if (func == NULL) {
-            key = PyLong_FromSsize_t((Py_ssize_t) k - current_num_fields);
-            func = PyDict_GetItem(converters, key);
-            Py_DECREF(key);
+        if (!PyCallable_Check(value)) {
+            PyErr_Format(PyExc_TypeError,
+                    "values of the converters dictionary must be callable, "
+                    "but the value associated with key %R is not", key);
+            goto error;
         }
-        if (func != NULL) {
-            Py_INCREF(func);
-            conv_funcs[j] = func;
-        }
+        Py_INCREF(value);
+        conv_funcs[column] = value;
     }
     return conv_funcs;
+
+  error:
+    for (int i = 0; i < current_num_fields; i++) {
+        Py_XDECREF(conv_funcs[i]);
+    }
+    PyMem_FREE(conv_funcs);
+    return NULL;
 }
 
 /**
@@ -140,9 +181,8 @@ create_conv_funcs(
  *        which column is read for each individual row (negative columns are
  *        accepted).
  * @param skiplines The number of lines to skip, these lines are ignored.
- * @param converters Python dictionary of converters.
- *        TODO: Move converter preparation earlier and pass an array and offset
- *              instead (or an array of positive and negative indices).
+ * @param converters Python dictionary of converters.  Finalizing converters
+ *        is difficult without information about the number of columns.
  * @param data_array An array to be filled or NULL.  In either case a new
  *        reference is returned (the reference to `data_array` is not stolen).
  * @param out_descr The dtype used for allocating a new array.  This is not
@@ -236,13 +276,8 @@ read_rows(stream *s,
                 num_usecols = actual_num_fields;
             }
 
-            if (converters != Py_None) {
-                conv_funcs = create_conv_funcs(
-                        converters, usecols, num_usecols, current_num_fields);
-            }
-            else {
-                conv_funcs = calloc(num_usecols, sizeof(PyObject *));
-            }
+            conv_funcs = create_conv_funcs(
+                    converters, usecols, num_usecols, current_num_fields);
             if (conv_funcs == NULL) {
                 goto error;
             }
@@ -384,7 +419,7 @@ read_rows(stream *s,
     }
 
     tokenizer_clear(&ts);
-    free(conv_funcs);
+    PyMem_FREE(conv_funcs);
 
     if (data_array == NULL) {
         assert(row_count == 0 && result_shape[0] == 0);
@@ -427,7 +462,7 @@ read_rows(stream *s,
     return data_array;
 
   error:
-    free(conv_funcs);
+    PyMem_FREE(conv_funcs);
     tokenizer_clear(&ts);
     Py_XDECREF(data_array);
     return NULL;

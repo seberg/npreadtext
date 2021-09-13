@@ -172,20 +172,6 @@ def read(fname, *, delimiter=',', comment='#', quote='"',
         usecols = np.array([operator.index(i) for i in usecols_as_list],
                            dtype=np.int32)
 
-    if converters is not None:
-        if not isinstance(converters, dict):
-            raise TypeError('converters must be a dictionary')
-        for key, func in converters.items():
-            try:
-                operator.index(key)
-            except TypeError:
-                raise TypeError('keys of the converters dictionary must '
-                                f'be integers; got {key!r}') from None
-            if not callable(func):
-                raise TypeError('values of the converters dictionary must '
-                                'be callable, but the value associated with '
-                                f'the key {key!r} is not')
-
     if ndmin not in [None, 0, 1, 2]:
         raise ValueError(f'ndmin must be None, 0, 1, or 2; got {ndmin}')
 
