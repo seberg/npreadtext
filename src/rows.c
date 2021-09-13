@@ -82,10 +82,9 @@ max_token_len(
  */
 PyObject **
 create_conv_funcs(
-        PyObject *converters, int32_t *usecols, int num_usecols,
-        int current_num_fields)
+        PyObject *converters, int num_fields, int32_t *usecols)
 {
-    PyObject **conv_funcs = PyMem_Calloc(num_usecols, sizeof(PyObject *));
+    PyObject **conv_funcs = PyMem_Calloc(num_fields, sizeof(PyObject *));
     if (conv_funcs == NULL) {
         PyErr_NoMemory();
         return NULL;
@@ -121,26 +120,25 @@ create_conv_funcs(
              *    us to correctly normalize converters to result column here.)
              */
             int i = 0;
-            for (; i < num_usecols; i++) {
+            for (; i < num_fields; i++) {
                 if (column == usecols[i]) {
                     column = i;
                     break;
                 }
             }
-            if (i == num_usecols) {
+            if (i == num_fields) {
                 continue;  /* ignore unused converter */
             }
         }
         else {
-            if (column < -current_num_fields || column >= current_num_fields) {
+            if (column < -num_fields || column >= num_fields) {
                 PyErr_Format(PyExc_ValueError,
                         "converter specified for column %zd, which is invalid "
-                        "for the number of fields %d.",
-                        column, current_num_fields);
+                        "for the number of fields %d.", column, num_fields);
                 goto error;
             }
             if (column < 0) {
-                column += current_num_fields;
+                column += num_fields;
             }
         }
         if (!PyCallable_Check(value)) {
@@ -155,7 +153,7 @@ create_conv_funcs(
     return conv_funcs;
 
   error:
-    for (int i = 0; i < current_num_fields; i++) {
+    for (int i = 0; i < num_fields; i++) {
         Py_XDECREF(conv_funcs[i]);
     }
     PyMem_FREE(conv_funcs);
@@ -268,16 +266,8 @@ read_rows(stream *s,
                 actual_num_fields = current_num_fields;
             }
 
-            if (usecols == NULL) {
-                /* TODO: This seeems wrong, converters are based on the current
-                 *       number of fields.  So we should never require usecols.
-                 *       (https://github.com/BIDS-numpy/npreadtext/issues/52)
-                 */
-                num_usecols = actual_num_fields;
-            }
-
             conv_funcs = create_conv_funcs(
-                    converters, usecols, num_usecols, current_num_fields);
+                    converters, actual_num_fields, usecols);
             if (conv_funcs == NULL) {
                 goto error;
             }
