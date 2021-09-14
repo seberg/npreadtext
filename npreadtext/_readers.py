@@ -1,6 +1,7 @@
 
 import os
 import operator
+import contextlib
 import numpy as np
 from ._readtextmodule import _readtext_from_file_object
 
@@ -32,17 +33,17 @@ def _preprocess_comments(iterable, comments, encoding):
         yield line
 
 
-def read(file, *, delimiter=',', comment='#', quote='"',
+def read(fname, *, delimiter=',', comment='#', quote='"',
          decimal='.', sci='E', imaginary_unit='j',
          usecols=None, skiprows=0,
          max_rows=None, converters=None, ndmin=None, unpack=False,
-         dtype=np.float64, encoding=None):
+         dtype=np.float64, encoding="bytes"):
     r"""
     Read a NumPy array from a text file.
 
     Parameters
     ----------
-    file : str or file object
+    fname : str or file object
         The filename or the file to be read.
     delimiter : str, optional
         Field delimiter of the fields in line of the file.
@@ -73,6 +74,13 @@ def read(file, *, delimiter=',', comment='#', quote='"',
     max_rows : int, optional
         Maximum number of rows of data to read.  Default is to read the
         entire file.
+    converters : dict, optional
+        A dictionary mapping column number to a function that will parse the
+        column string into the desired value. E.g. if column 0 is a date
+        string: ``converters = {0: datestr2num}``. Converters can also be used
+        to provide a default value for missing data, e.g.
+        ``converters = {3: lambda s: float(s.strip() or 0)}``.
+        Default: None
     ndmin : int, optional
         Minimum dimension of the array returned.
         Allowed values are 0, 1 or 2.  Default is 0.
@@ -84,7 +92,12 @@ def read(file, *, delimiter=',', comment='#', quote='"',
         A NumPy dtype instance, can be a structured dtype to map to the
         columns of the file.
     encoding : str, optional
-        Specifies the encoding of the input file.
+        Encoding used to decode the inputfile. The special value 'bytes'
+        (the default) enables backwards-compatible behavior for `converters`,
+        ensuring that inputs to the converter functions are encoded
+        bytes objects. The special value 'bytes' has no additional effect if
+        ``converters=None``. If encoding is ``'bytes'`` or ``None``, the
+        default system encoding is used.
 
     Returns
     -------
@@ -115,14 +128,11 @@ def read(file, *, delimiter=',', comment='#', quote='"',
     array([(1. , 10, b'alpha'), (2.3, 25, b'beta'), (4.5, 16, b'gamma')],
           dtype=[('f0', '<f8'), ('f1', 'u1'), ('f2', 'S5')])
     """
-    # TODO: encoding needs a bit closer look still to compare with loadtxt.
-    #       1. loadtxt tries to guess encoding from the object.
-    #       2. Does loadtxt actually use the preferred encoding, or only
-    #          indirectly through the mechanism in 1.?
-    #          (This matters for an iterable of byte!)
-    if encoding is None:
-        import locale
-        encoding = locale.getpreferredencoding()
+    # Handle special 'bytes' keyword for encoding
+    byte_converters = False
+    if encoding == 'bytes':
+        encoding = None
+        byte_converters = True
 
     if dtype is None:
         raise TypeError("a dtype must be provided.")
@@ -221,39 +231,43 @@ def read(file, *, delimiter=',', comment='#', quote='"',
     else:
         dtypes = None
 
-    if isinstance(file, os.PathLike):
-        file = os.fspath(file)
+    fh_closing_ctx = contextlib.nullcontext()
+    filelike = False
+    try:
+        if isinstance(fname, os.PathLike):
+            fname = os_fspath(fname)
+        # TODO: loadtxt actually uses `file + ''` to decide this?!
+        if isinstance(fname, str):
+            fh = np.lib._datasource.open(fname, 'rt', encoding=encoding)
+            if encoding is None:
+                encoding = getattr(fh, 'encoding', 'latin1')
 
-    # TODO: loadtxt actually uses `file + ''` to decide this
-    if isinstance(file, str):
-        # We open a file-like object (using datasource).  Since we own the file
-        # we do not have to worry about how much we read.
-        f = np.lib._datasource.open(file, 'rt', encoding=encoding)
-        try:
-            if comments is not None:
-                f = _preprocess_comments(iter(f), comments, encoding)
-            arr = _readtext_from_file_object(
-                    f, delimiter=delimiter, comment=comment, quote=quote,
-                    decimal=decimal, sci=sci, imaginary_unit=imaginary_unit,
-                    usecols=usecols, skiprows=skiprows, max_rows=max_rows,
-                    converters=converters, dtype=dtype, dtypes=dtypes,
-                    encoding=encoding, filelike=comments is None)
-        finally:
-            f.close()
-    else:
-        # TODO: If the user passed an open file, loadtxt guarantees reading
-        #       only as far as necessary (and guarantees it does that).
-        #       However, that makes this path slower than the above one.
-        file = iter(file)
+            fh_closing_ctx = contextlib.closing(fh)
+            data = fh
+            filelike = True
+        else:
+            if encoding is None:
+                encoding = getattr(fname, 'encoding', 'latin1')
+            data = iter(fname)
+    except TypeError as e:
+        raise ValueError(
+            f"fname must be a string, filehandle, list of strings,\n"
+            f"or generator. Got {type(fname)} instead.") from e
+
+    with fh_closing_ctx:
         if comments is not None:
-            file = _preprocess_comments(file, comments, encoding)
+            if filelike:
+                data = iter(data)
+                filelike = False
+            data = _preprocess_comments(data, comments, encoding)
 
         arr = _readtext_from_file_object(
-            file, delimiter=delimiter, comment=comment, quote=quote,
+            data, delimiter=delimiter, comment=comment, quote=quote,
             decimal=decimal, sci=sci, imaginary_unit=imaginary_unit,
             usecols=usecols, skiprows=skiprows, max_rows=max_rows,
             converters=converters, dtype=dtype, dtypes=dtypes,
-            encoding=encoding, filelike=False)
+            encoding=encoding, filelike=filelike,
+            byte_converters=byte_converters)
 
     if ndmin is not None:
         # Handle non-None ndmin like np.loadtxt.  Might change this eventually?

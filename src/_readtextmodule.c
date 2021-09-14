@@ -128,7 +128,8 @@ _readtext_from_file_object(PyObject *self, PyObject *args, PyObject *kwargs)
                              "usecols", "skiprows",
                              "max_rows", "converters",
                              "dtype", "dtypes",
-                             "encoding", "filelike", NULL};
+                             "encoding", "filelike", "byte_converters",
+                             NULL};
     PyObject *file;
     Py_ssize_t skiprows = 0;
     Py_ssize_t max_rows = -1;
@@ -153,13 +154,15 @@ _readtext_from_file_object(PyObject *self, PyObject *args, PyObject *kwargs)
         .allow_embedded_newline = true,
         .delimiter_is_whitespace = false,
         .ignore_leading_whitespace = false,
+        .python_byte_converters = false,
     };
+    int python_byte_converters = 0;
 
     PyObject *arr = NULL;
     int num_dtype_fields;
 
     if (!PyArg_ParseTupleAndKeywords(
-            args, kwargs, "O|$O&O&O&O&O&O&OnnOOOsp", kwlist,
+            args, kwargs, "O|$O&O&O&O&O&O&OnnOOOzpp", kwlist,
             &file,
             &parse_control_character, &pc.delimiter,
             &parse_control_character, &pc.comment,
@@ -168,9 +171,11 @@ _readtext_from_file_object(PyObject *self, PyObject *args, PyObject *kwargs)
             &parse_control_character, &pc.sci,
             &parse_control_character, &pc.imaginary_unit,
             &usecols, &skiprows, &max_rows, &converters,
-            &dtype, &dtypes_obj, &encoding, &filelike)) {
+            &dtype, &dtypes_obj, &encoding, &filelike,
+            &python_byte_converters)) {
         return NULL;
     }
+    pc.python_byte_converters = python_byte_converters;
 
     if (pc.delimiter == (Py_UCS4)-1) {
         /* TODO: We can allow a '\0' delimiter; need to refine argparsing */

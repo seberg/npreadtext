@@ -280,11 +280,18 @@ to_unicode(PyArray_Descr *descr,
  * Convert functions helper for the generic converter.
  */
 static PyObject *
-call_converter_function(PyObject *func, const Py_UCS4 *str, size_t length)
+call_converter_function(
+        PyObject *func, const Py_UCS4 *str, size_t length, bool byte_converters)
 {
     PyObject *s = PyUnicode_FromKindAndData(PyUnicode_4BYTE_KIND, str, length);
     if (s == NULL || func == NULL) {
         return s;
+    }
+    if (byte_converters) {
+        Py_SETREF(s, PyUnicode_AsEncodedString(s, "latin1", NULL));
+        if (s == NULL) {
+            return NULL;
+        }
     }
     PyObject *result = PyObject_CallFunctionObjArgs(func, s, NULL);
     Py_DECREF(s);
@@ -306,11 +313,11 @@ call_converter_function(PyObject *func, const Py_UCS4 *str, size_t length)
 int
 to_generic_with_converter(PyArray_Descr *descr,
         const Py_UCS4 *str, const Py_UCS4 *end, char *dataptr,
-        parser_config *unused, PyObject *func)
+        parser_config *config, PyObject *func)
 {
     /* Converts to unicode and calls custom converter (if set) */
     PyObject *converted = call_converter_function(
-            func, str, (size_t)(end - str));
+            func, str, (size_t)(end - str), config->python_byte_converters);
     if (converted == NULL) {
         return -1;
     }
