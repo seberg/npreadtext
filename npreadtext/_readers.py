@@ -33,6 +33,10 @@ def _preprocess_comments(iterable, comments, encoding):
         yield line
 
 
+# The number of rows we read in one go if confronted with a parametric dtype
+_CHUNK_SIZE = 50000
+
+
 def read(fname, *, delimiter=',', comment='#', quote='"',
          decimal='.', sci='E', imaginary_unit='j',
          usecols=None, skiprows=0,
@@ -137,6 +141,15 @@ def read(fname, *, delimiter=',', comment='#', quote='"',
     if dtype is None:
         raise TypeError("a dtype must be provided.")
     dtype = np.dtype(dtype)
+
+    read_dtype_via_object_chunks = None
+    if dtype.kind in 'SUM' and (
+            dtype == "S0" or dtype == "U0" or  dtype == "M8" or dtype == 'm8'):
+        # This is a legacy "flexible" dtype.  We do not truly support
+        # parametric dtypes currently (no dtype discovery step in the core),
+        # but have to support these for backward compatibility.
+        read_dtype_via_object_chunks = dtype
+        dtype = np.dtype(object)
 
     if usecols is not None:
         # Allow usecols to be a single int or a sequence of ints
@@ -261,13 +274,62 @@ def read(fname, *, delimiter=',', comment='#', quote='"',
                 filelike = False
             data = _preprocess_comments(data, comments, encoding)
 
-        arr = _readtext_from_file_object(
-            data, delimiter=delimiter, comment=comment, quote=quote,
-            decimal=decimal, sci=sci, imaginary_unit=imaginary_unit,
-            usecols=usecols, skiprows=skiprows, max_rows=max_rows,
-            converters=converters, dtype=dtype, dtypes=dtypes,
-            encoding=encoding, filelike=filelike,
-            byte_converters=byte_converters)
+        if read_dtype_via_object_chunks is None:
+            arr = _readtext_from_file_object(
+                    data, delimiter=delimiter, comment=comment, quote=quote,
+                    decimal=decimal, sci=sci, imaginary_unit=imaginary_unit,
+                    usecols=usecols, skiprows=skiprows, max_rows=max_rows,
+                    converters=converters, dtype=dtype, dtypes=dtypes,
+                    encoding=encoding, filelike=filelike,
+                    byte_converters=byte_converters)
+
+        else:
+            # This branch reads the file into chunks of object arrays and then
+            # casts them to the desired actual dtype.  This ensures correct
+            # string-length and datetime-unit discovery (as for `arr.astype()`).
+            # Due to chunking, certain error reports are less clear, currently.
+            if filelike:
+                data = iter(data)  # cannot chunk when reading from file
+
+            c_byte_converters = False
+            if read_dtype_via_object_chunks == "S":
+                c_byte_converters = True  # Use latin1 rather than ascii
+
+            chunks = []
+            while max_rows != 0:
+                if max_rows < 0:
+                    chunk_size = _CHUNK_SIZE
+                else:
+                    chunk_size = min(_CHUNK_SIZE, max_rows)
+
+                next_arr = _readtext_from_file_object(
+                        data, delimiter=delimiter, comment=comment, quote=quote,
+                        decimal=decimal, sci=sci, imaginary_unit=imaginary_unit,
+                        usecols=usecols, skiprows=skiprows, max_rows=max_rows,
+                        converters=converters, dtype=dtype, dtypes=dtypes,
+                        encoding=encoding, filelike=filelike,
+                        byte_converters=byte_converters,
+                        c_byte_converters=c_byte_converters)
+                # Cast here already.  We hope that this is better even for
+                # large files because the storage is more compact.  It could
+                # be adapted (in principle the concatenate could cast).
+                chunks.append(next_arr.astype(read_dtype_via_object_chunks))
+
+                skiprows = 0  # Only have to skip for first chunk
+                if max_rows >= 0:
+                    max_rows -= chunk_size
+                if len(next_arr) < chunk_size:
+                    # There was less data than requested, so we are done.
+                    break
+
+            # Need at least one chunk, but if empty, the last one may have
+            # the wrong shape.
+            if len(chunks) > 1 and len(chunks[-1]) == 0:
+                del chunks[-1]
+            if len(chunks) == 1:
+                arr = chunks[0]
+            else:
+                arr = np.concatenate(chunks, axis=0)
 
     if ndmin is not None:
         # Handle non-None ndmin like np.loadtxt.  Might change this eventually?

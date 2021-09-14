@@ -16,7 +16,7 @@ jobs:
         os: [ubuntu, macos, windows]
         python-version: [3.7, 3.8, 3.9]
         numpy-version: [1.19.*, 1.20.*, 1.21.*]
-        compat-test-ignore: ["test_converters_nodecode,test_from_float_hex"]
+        compat-test-ignore: ["test_from_float_hex"]
 
     steps:
     - uses: actions/checkout@v2

@@ -175,8 +175,6 @@ read_rows(stream *s,
     int ndim = homogeneous ? 2 : 1;
     npy_intp result_shape[2] = {0, 1};
 
-    bool track_string_size = false;
-
     bool data_array_allocated = data_array == NULL;
     /* Make sure we own `data_array` for the purpose of error handling */
     Py_XINCREF(data_array);
@@ -208,17 +206,6 @@ read_rows(stream *s,
             break;
         }
     }
-
-    // track_string_size will be true if the user passes in
-    // dtype=np.dtype('S') or dtype=np.dtype('U').  That is, the
-    // data type is string or unicode, but a length was not given.
-    // In this case, we must track the maximum length of the fields
-    // and update the actual length for the dtype dynamically as
-    // the file is read.
-    track_string_size = ((num_field_types == 1) &&
-                         (field_types[0].itemsize == 0) &&
-                         ((field_types[0].typecode == 'S') ||
-                          (field_types[0].typecode == 'U')));
 
     size_t row_count = 0;  /* number of rows actually processed */
     while ((*nrows < 0 || row_count < *nrows) && ts_result == 0) {
@@ -296,47 +283,6 @@ read_rows(stream *s,
                 data_allocated_rows = *nrows;
             }
             data_ptr = PyArray_BYTES(data_array);
-        }
-
-        if (track_string_size) {
-            // typecode must be 'S' or 'U'.
-            // Find the maximum field length in the current line.
-            if (converters != Py_None) {
-                // XXX Not handled yet.
-            }
-            size_t maxlen = max_token_len(fields, actual_num_fields, usecols);
-            size_t new_itemsize = (field_types[0].typecode == 'S') ? maxlen : 4*maxlen;
-            if (new_itemsize > NPY_MAX_INT) {
-                PyErr_Format(PyExc_ValueError,
-                        "string length of %zu is too long to be stored in a "
-                        "NumPy string dtype (too long).", maxlen);
-                goto error;
-            }
-
-            if (new_itemsize > field_types[0].itemsize) {
-                row_size = new_itemsize * actual_num_fields;
-                /* Update the descriptor to the new string length */
-                field_types[0].itemsize = new_itemsize;
-                PyArray_Descr *new_descr = PyArray_DescrNewFromType(
-                        field_types[0].descr->type_num);
-                if (new_descr == NULL) {
-                    goto error;
-                }
-                new_descr->elsize = (int)new_itemsize;
-                Py_SETREF(field_types[0].descr, new_descr);
-                /* Create new array and copy data (empty works for strings) */
-                Py_INCREF(new_descr);
-                PyArrayObject *new_arr = (PyArrayObject *)PyArray_Empty(
-                        ndim, PyArray_DIMS(data_array), new_descr, 0);
-                if (new_arr == NULL) {
-                    goto error;
-                }
-                PyArray_CopyInto(new_arr, data_array);
-                Py_DECREF(data_array);
-                data_array = new_arr;
-                /* Update `data_ptr` since we replaced `data_array` */
-                data_ptr = PyArray_BYTES(data_array) + row_count * row_size;
-            }
         }
 
         if (!usecols && (actual_num_fields != current_num_fields)) {

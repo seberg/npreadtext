@@ -78,8 +78,13 @@ typedef struct _parser_config {
      /*
       * Data should be encoded as `latin1` when using python converter
       * (implementing `loadtxt` default Python 2 compatibility mode).
+      * The c byte converter is used when the user requested `dtype="S"`.
+      * In this case we go via `dtype=object`, however, loadtxt allows latin1
+      * while normal object to string casts only accept ASCII, so it ensures
+      * that that the object array already contains bytes and not strings.
       */
      bool python_byte_converters;
+     bool c_byte_converters;
 } parser_config;
 
 parser_config
