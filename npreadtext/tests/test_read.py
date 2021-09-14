@@ -438,3 +438,32 @@ def test_character_not_bytes_compatible():
 
     with pytest.raises(ValueError):
         read(data, dtype="S5")
+
+
+def test_convert_raises_non_dict():
+    data = StringIO("1 2\n3 4")
+    with pytest.raises(TypeError, match="converters must be a dict"):
+        read(data, converters=0)
+
+
+def test_converter_raises_non_integer_key():
+    data = StringIO("1 2\n3 4")
+    with pytest.raises(TypeError, match="keys of the converters dict"):
+        read(data, converters={"a": int})
+    with pytest.raises(TypeError, match="keys of the converters dict"):
+        read(data, converters={"a": int}, usecols=0)
+
+
+@pytest.mark.parametrize("bad_col_ind", (3, -3))
+def test_converter_raises_non_column_key(bad_col_ind):
+    data = StringIO("1 2\n3 4")
+    with pytest.raises(ValueError, match="converter specified for column"):
+        read(data, converters={bad_col_ind: int})
+
+
+def test_converter_raises_value_not_callable():
+    data = StringIO("1 2\n3 4")
+    with pytest.raises(
+        TypeError, match="values of the converters dictionary must be callable"
+    ):
+        read(data, converters={0: 1})
