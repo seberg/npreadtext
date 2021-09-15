@@ -42,7 +42,7 @@ str_to_int64(
     int d;
 
     // Skip leading spaces.
-    while (isspace(*p)) {
+    while (Py_UNICODE_ISSPACE(*p)) {
         ++p;
     }
 
@@ -104,7 +104,7 @@ str_to_int64(
     }
 
     // Skip trailing spaces.
-    while (isspace(*p)) {
+    while (Py_UNICODE_ISSPACE(*p)) {
         ++p;
     }
 
@@ -130,7 +130,7 @@ str_to_uint64(const Py_UCS4 *p_item, uint64_t uint_max, int *error)
     int d;
 
     // Skip leading spaces.
-    while (isspace(*p)) {
+    while (Py_UNICODE_ISSPACE(*p)) {
         ++p;
     }
 
@@ -169,7 +169,7 @@ str_to_uint64(const Py_UCS4 *p_item, uint64_t uint_max, int *error)
     }
 
     // Skip trailing spaces.
-    while (isspace(*p)) {
+    while (Py_UNICODE_ISSPACE(*p)) {
         ++p;
     }
 
