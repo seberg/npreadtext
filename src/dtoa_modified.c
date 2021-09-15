@@ -1473,7 +1473,7 @@ _Py_dg_strtod_modified(const Py_UCS4 *s00, Py_UCS4 **se, int *perror,
     s = s00;
 
     // Skip initial whitespace.
-    while (isspace(*s)) {
+    while (Py_UNICODE_ISSPACE(*s)) {
         ++s;
     }
 
@@ -1596,7 +1596,7 @@ _Py_dg_strtod_modified(const Py_UCS4 *s00, Py_UCS4 **se, int *perror,
         // Skip trailing whitespace
         // XXX Ensure that this doesn't violate some assumption
         // about s after the exponent has been parsed.
-        while (isspace(*s)) {
+        while (Py_UNICODE_ISSPACE(*s)) {
             ++s;
         }
     }
