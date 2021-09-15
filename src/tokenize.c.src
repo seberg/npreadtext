@@ -147,11 +147,11 @@ tokenizer_core_@type@(tokenizer_state *ts, parser_config *const config)
         case TOKENIZE_UNQUOTED:
             chunk_start = pos;
             for (; pos < stop; pos++) {
-                if (*pos == '\n') {
+                if (*pos == '\r') {
                     ts->state = TOKENIZE_EAT_CRLF;
                     break;
                 }
-                else if (*pos == '\r') {
+                else if (*pos == '\n') {
                     ts->state = TOKENIZE_LINE_END;
                     break;
                 }
@@ -174,11 +174,11 @@ tokenizer_core_@type@(tokenizer_state *ts, parser_config *const config)
             /* Note, this branch is largely identical to `TOKENIZE_UNQUOTED` */
             chunk_start = pos;
             for (; pos < stop; pos++) {
-                if (*pos == '\n') {
+                if (*pos == '\r') {
                     ts->state = TOKENIZE_EAT_CRLF;
                     break;
                 }
-                else if (*pos == '\r') {
+                else if (*pos == '\n') {
                     ts->state = TOKENIZE_LINE_END;
                     break;
                 }
@@ -201,11 +201,11 @@ tokenizer_core_@type@(tokenizer_state *ts, parser_config *const config)
             chunk_start = pos;
             for (; pos < stop; pos++) {
                 if (!config->allow_embedded_newline) {
-                    if (*pos == '\n') {
+                    if (*pos == '\r') {
                         ts->state = TOKENIZE_EAT_CRLF;
                         break;
                     }
-                    else if (*pos == '\r') {
+                    else if (*pos == '\n') {
                         ts->state = TOKENIZE_LINE_END;
                         break;
                     }
