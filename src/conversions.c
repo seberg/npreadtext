@@ -315,6 +315,13 @@ to_generic_with_converter(PyArray_Descr *descr,
         const Py_UCS4 *str, const Py_UCS4 *end, char *dataptr,
         parser_config *config, PyObject *func)
 {
+    bool use_byte_converter = false;
+    if (func == NULL) {
+        use_byte_converter = config->python_byte_converters;
+    }
+    else {
+        use_byte_converter = config->c_byte_converters;
+    }
     /* Converts to unicode and calls custom converter (if set) */
     PyObject *converted = call_converter_function(
             func, str, (size_t)(end - str), config->python_byte_converters);
