@@ -234,7 +234,7 @@ def read(fname, *, delimiter=',', comment='#', quote='"',
     filelike = False
     try:
         if isinstance(fname, os.PathLike):
-            fname = os_fspath(fname)
+            fname = os.fspath(fname)
         # TODO: loadtxt actually uses `file + ''` to decide this?!
         if isinstance(fname, str):
             fh = np.lib._datasource.open(fname, 'rt', encoding=encoding)
