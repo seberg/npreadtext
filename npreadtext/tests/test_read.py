@@ -416,8 +416,7 @@ def test_object_cleanup_on_read_error():
 
     txt = StringIO("x\n" * 10000)
 
-    # note that this could be a chained ValueError instead:
-    with pytest.raises(ValueError, match="failed half-way through!"):
+    with pytest.raises(ValueError, match="at row 5000, column 1"):
         read(txt, dtype=object, converters={0: conv})
 
     assert sys.getrefcount(sentinel) == 2

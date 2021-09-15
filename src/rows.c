@@ -6,6 +6,7 @@
 #define NO_IMPORT_ARRAY
 #define PY_ARRAY_UNIQUE_SYMBOL npreadtext_ARRAY_API
 #include "numpy/arrayobject.h"
+#include "numpy/npy_3kcompat.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -413,20 +414,22 @@ read_rows(stream *s,
             data_ptr += field_types[f].itemsize;
 
             if (NPY_UNLIKELY(err)) {
-                /* TODO: We could also chain an inner exception... */
-                if (!PyErr_Occurred()) {
-                    size_t length = end - str;
-                    PyObject *string = PyUnicode_FromKindAndData(
-                            PyUnicode_4BYTE_KIND, str, length);
-                    if (string == NULL) {
-                        goto error;
-                    }
-                    PyErr_Format(PyExc_ValueError,
-                            "could not convert string %.100R to %S at "
-                            "row %zu, column %d.",
-                            string, field_types[f].descr, row_count, k+1);
-                    Py_DECREF(string);
+                PyObject *exc, *val, *tb;
+                PyErr_Fetch(&exc, &val, &tb);
+
+                size_t length = end - str;
+                PyObject *string = PyUnicode_FromKindAndData(
+                        PyUnicode_4BYTE_KIND, str, length);
+                if (string == NULL) {
+                    npy_PyErr_ChainExceptions(exc, val, tb);
+                    goto error;
                 }
+                PyErr_Format(PyExc_ValueError,
+                        "could not convert string %.100R to %S at "
+                        "row %zu, column %d.",
+                        string, field_types[f].descr, row_count, k+1);
+                Py_DECREF(string);
+                npy_PyErr_ChainExceptionsCause(exc, val, tb);
                 goto error;
             }
         }
