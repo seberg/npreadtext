@@ -284,7 +284,7 @@ call_converter_function(
         PyObject *func, const Py_UCS4 *str, size_t length, bool byte_converters)
 {
     PyObject *s = PyUnicode_FromKindAndData(PyUnicode_4BYTE_KIND, str, length);
-    if (s == NULL || func == NULL) {
+    if (s == NULL) {
         return s;
     }
     if (byte_converters) {
@@ -292,6 +292,9 @@ call_converter_function(
         if (s == NULL) {
             return NULL;
         }
+    }
+    if (func == NULL) {
+        return s;
     }
     PyObject *result = PyObject_CallFunctionObjArgs(func, s, NULL);
     Py_DECREF(s);
@@ -315,16 +318,16 @@ to_generic_with_converter(PyArray_Descr *descr,
         const Py_UCS4 *str, const Py_UCS4 *end, char *dataptr,
         parser_config *config, PyObject *func)
 {
-    bool use_byte_converter = false;
+    bool use_byte_converter;
     if (func == NULL) {
-        use_byte_converter = config->python_byte_converters;
+        use_byte_converter = config->c_byte_converters;
     }
     else {
-        use_byte_converter = config->c_byte_converters;
+        use_byte_converter = config->python_byte_converters;
     }
     /* Converts to unicode and calls custom converter (if set) */
     PyObject *converted = call_converter_function(
-            func, str, (size_t)(end - str), config->python_byte_converters);
+            func, str, (size_t)(end - str), use_byte_converter);
     if (converted == NULL) {
         return -1;
     }
