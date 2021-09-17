@@ -104,7 +104,7 @@ By default, ``pandas.read_csv`` uses an approximate method for parsing
 floating point numbers. In practice, this results in faster float parsing
 at the expense of faithful full-precision reproduction of floating point
 values on reading/writing. Full-precision float parsing can be selected
-using the ``float_precision="round-trip"`` to ``pandas.read_csv``.
+using the ``float_precision="round-trip"`` option of ``pandas.read_csv``.
 
 See also:
 
