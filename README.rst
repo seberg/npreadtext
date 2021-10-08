@@ -3,6 +3,25 @@ npreadtext
 
 Read text files (e.g. CSV or other delimited files) into a NumPy array.
 
+Quick Start
+-----------
+
+``npreadtext`` has been tested with NumPy v1.18 and higher and can be installed
+using::
+
+    python -m pip install numpy
+    python -m pip install git+git://github.com/BIDS-numpy/npreadtext
+
+To enable the C-accelerated version of ``np.loadtxt``, monkey-patch NumPy::
+
+    import numpy as np
+    from npreadtext import monkeypatch_numpy
+
+This replaces ``np.loadtxt`` with ``npreadtext._loadtxt``.
+
+For more detailed information on installation, testing, and benchmarking - see
+below.
+
 Dependencies
 ------------
 
