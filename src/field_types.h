@@ -41,22 +41,11 @@ typedef struct _field_type {
     //   needed for the 'S' or 'U' type codes, but it is expected to be
     //   correctly filled in for all the types.
     size_t itemsize;
-    // typecode (mostly unused now, was used during additional analysis step)
-    //     * : undefined field type (during auto-discovery)
-    //     i : integer (byte to long long)
-    //     u : unsigned integer (ubyte to unsigned long long)
-    //     f : floating point (or double) -- not float128, as it can't be
-    //         handled by the builtin parser (we ignore it here).
-    //     c : complex (64bit or 128 bit).
-    //     S : character string (1 character == 1 byte)
-    //     U : Unicode string (32 bit codepoints)
-    //     x : generic dtype.
-    char typecode;
 } field_type;
 
 
 void
-field_types_clear(int num_field_types, field_type *ft);
+field_types_xclear(int num_field_types, field_type *ft);
 
 field_type *
 field_types_create(int num_field_types, PyArray_Descr *dtypes[]);
