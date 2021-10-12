@@ -11,6 +11,11 @@
 #include "numpy/arrayobject.h"
 
 int
+to_bool(PyArray_Descr *descr,
+        const Py_UCS4 *str, const Py_UCS4 *end, char *dataptr,
+        parser_config *pconfig);
+
+int
 to_float(PyArray_Descr *descr,
         const Py_UCS4 *str, const Py_UCS4 *end, char *dataptr,
         parser_config *pconfig);

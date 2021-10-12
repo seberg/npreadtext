@@ -9,12 +9,33 @@
 #include <stdbool.h>
 
 #include "conversions.h"
+#include "str_to.h"
 
 
 double
 _Py_dg_strtod_modified(
         const Py_UCS4 *s00, Py_UCS4 **se, int *error,
         Py_UCS4 decimal, Py_UCS4 sci, bool skip_trailing);
+
+
+/*
+ * Coercion to boolean is done via integer right now.
+ * TODO: Like the integer code, does not handle embedded \0 characters!
+ */
+int
+to_bool(PyArray_Descr *NPY_UNUSED(descr),
+        const Py_UCS4 *str, const Py_UCS4 *NPY_UNUSED(end), char *dataptr,
+        parser_config *NPY_UNUSED(pconfig))
+{
+    int error = 0;
+    int64_t res = str_to_int64(str, INT64_MIN, INT64_MAX, &error);
+    if (error) {
+        return -1;
+    }
+    *dataptr = (res != 0);
+    return 0;
+}
+
 
 /*
  *  `item` must be the nul-terminated string that is to be
@@ -58,7 +79,7 @@ to_float(PyArray_Descr *descr,
 }
 
 
-/* Note: Currently used in the iteger code as a fallback */
+/* Note: Currently used in the integer code as a fallback */
 bool
 to_double_raw(const Py_UCS4 *str, double *res, Py_UCS4 decimal, Py_UCS4 sci)
 {
