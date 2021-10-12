@@ -51,7 +51,11 @@ field_types_init_descriptors(int num_field_types, field_type *ft)
             continue;
         }
 
-        if (ft[i].typecode == 'i') {
+        if (ft[i].typecode == '?') {
+            typenum = NPY_BOOL;
+            ft[i].set_from_ucs4 = &to_bool;
+        }
+        else if (ft[i].typecode == 'i') {
             size_t itemsize = ft[i].itemsize;
             switch (itemsize) {
                 case 1:
@@ -156,7 +160,10 @@ field_types_create(int num_field_types, PyArray_Descr *dtypes[])
     }
     for (int i = 0; i < num_field_types; ++i) {
         PyArray_Descr *descr = dtypes[i];
-        if (PyDataType_ISSIGNED(descr)) {
+        if (PyDataType_ISBOOL(descr)) {
+            ft[i].typecode = '?';
+        }
+        else if (PyDataType_ISSIGNED(descr)) {
             ft[i].typecode = 'i';
         }
         else if (PyDataType_ISUNSIGNED(descr)) {

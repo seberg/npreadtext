@@ -347,6 +347,15 @@ def test_float_conversion():
     assert_equal(a, expected)
 
 
+def test_bool():
+    # Simple test for bool via integer:
+    res = read(["1, 0", "10, -1"], dtype=bool)
+    assert res.dtype == bool
+    assert_array_equal(res, [[True, False], [True, True]])
+    # Make sure we use only 1 and 0 on the byte-level:
+    assert_array_equal(res.view(np.uint8), [[1, 0], [1, 1]])
+
+
 @pytest.mark.parametrize('dt', [np.int8, np.int16, np.int32, np.int64,
                                 np.uint8, np.uint16, np.uint32, np.uint64])
 def test_cast_float_to_int(dt):
