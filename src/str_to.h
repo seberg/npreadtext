@@ -16,12 +16,6 @@
 #include "numpy/ndarraytypes.h"
 
 
-#define ERROR_OK             0
-#define ERROR_NO_DIGITS      1
-#define ERROR_OVERFLOW       2
-#define ERROR_INVALID_CHARS  3
-#define ERROR_MINUS_SIGN     4
-
 /*
  * The following two string conversion functions are largely equivalent
  * in Pandas.  They are in the header file here, to ensure they can be easily
@@ -32,9 +26,10 @@
  *  On success, *error is zero.
  *  If the conversion fails, *error is nonzero, and the return value is 0.
  */
-static NPY_INLINE int64_t
+static NPY_INLINE int
 str_to_int64(
-        const Py_UCS4 *p_item, int64_t int_min, int64_t int_max, int *error)
+        const Py_UCS4 *p_item, const Py_UCS4 *p_end,
+        int64_t int_min, int64_t int_max, int64_t *result)
 {
     const Py_UCS4 *p = (const Py_UCS4 *) p_item;
     bool isneg = 0;
@@ -57,9 +52,7 @@ str_to_int64(
 
     // Check that there is a first digit.
     if (!isdigit(*p)) {
-        // Error...
-        *error = ERROR_NO_DIGITS;
-        return 0;
+        return -1;
     }
 
     if (isneg) {
@@ -76,8 +69,7 @@ str_to_int64(
                 d = *++p;
             }
             else {
-                *error = ERROR_OVERFLOW;
-                return 0;
+                return -1;
             }
         }
     }
@@ -97,8 +89,7 @@ str_to_int64(
                 d = *++p;
             }
             else {
-                *error = ERROR_OVERFLOW;
-                return 0;
+                return -1;
             }
         }
     }
@@ -109,21 +100,22 @@ str_to_int64(
     }
 
     // Did we use up all the characters?
-    if (*p) {
-        *error = ERROR_INVALID_CHARS;
-        return 0;
+    if (p != p_end) {
+        return -1;
     }
 
-    *error = 0;
-    return number;
+    *result = number;
+    return 0;
 }
 
 /*
  *  On success, *error is zero.
  *  If the conversion fails, *error is nonzero, and the return value is 0.
  */
-static NPY_INLINE uint64_t
-str_to_uint64(const Py_UCS4 *p_item, uint64_t uint_max, int *error)
+static NPY_INLINE int
+str_to_uint64(
+        const Py_UCS4 *p_item, const Py_UCS4 *p_end,
+        uint64_t uint_max, uint64_t *result)
 {
     const Py_UCS4 *p = (const Py_UCS4 *) p_item;
     uint64_t number = 0;
@@ -136,8 +128,7 @@ str_to_uint64(const Py_UCS4 *p_item, uint64_t uint_max, int *error)
 
     // Handle sign.
     if (*p == '-') {
-        *error = ERROR_MINUS_SIGN;
-        return 0;
+        return -1;
     }
     if (*p == '+') {
         p++;
@@ -145,9 +136,7 @@ str_to_uint64(const Py_UCS4 *p_item, uint64_t uint_max, int *error)
 
     // Check that there is a first digit.
     if (!isdigit(*p)) {
-        // Error...
-        *error = ERROR_NO_DIGITS;
-        return 0;
+        return -1;
     }
 
     // If number is less than pre_max, at least one more digit
@@ -163,8 +152,7 @@ str_to_uint64(const Py_UCS4 *p_item, uint64_t uint_max, int *error)
             d = *++p;
         }
         else {
-            *error = ERROR_OVERFLOW;
-            return 0;
+            return -1;
         }
     }
 
@@ -174,13 +162,12 @@ str_to_uint64(const Py_UCS4 *p_item, uint64_t uint_max, int *error)
     }
 
     // Did we use up all the characters?
-    if (*p) {
-        *error = ERROR_INVALID_CHARS;
-        return 0;
+    if (p != p_end) {
+        return -1;
     }
 
-    *error = 0;
-    return number;
+    *result = number;
+    return 0;
 }
 
 
