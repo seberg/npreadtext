@@ -93,10 +93,7 @@ _readtext_from_stream(stream *s, char *filename, parser_config *pc,
 
   finish:
     Py_XDECREF(out_dtype);
-    if (ft != NULL) {
-        field_types_clear(num_fields, ft);
-        free(ft);
-    }
+    field_types_xclear(num_fields, ft);
     return (PyObject *)arr;
 }
 
