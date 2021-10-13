@@ -24,12 +24,11 @@ _Py_dg_strtod_modified(
  */
 int
 to_bool(PyArray_Descr *NPY_UNUSED(descr),
-        const Py_UCS4 *str, const Py_UCS4 *NPY_UNUSED(end), char *dataptr,
+        const Py_UCS4 *str, const Py_UCS4 *end, char *dataptr,
         parser_config *NPY_UNUSED(pconfig))
 {
-    int error = 0;
-    int64_t res = str_to_int64(str, INT64_MIN, INT64_MAX, &error);
-    if (error) {
+    int64_t res;
+    if (str_to_int64(str, end, INT64_MIN, INT64_MAX, &res) < 0) {
         return -1;
     }
     *dataptr = (res != 0);

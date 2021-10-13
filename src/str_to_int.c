@@ -15,11 +15,10 @@
             const Py_UCS4 *str, const Py_UCS4 *end, char *dataptr,                  \
             parser_config *pconfig)                                                 \
     {                                                                               \
+        int64_t parsed;                                                             \
         intw##_t x;                                                                 \
-        int ierror = 0;                                                             \
                                                                                     \
-        x = (intw##_t) str_to_int64(str, INT_MIN, INT_MAX, &ierror);                \
-        if (ierror) {                                                               \
+        if (str_to_int64(str, end, INT_MIN, INT_MAX, &parsed) < 0) {                \
             if (pconfig->allow_float_for_int) {                                     \
                 double fx;                                                          \
                 Py_UCS4 decimal = pconfig->decimal;                                 \
@@ -35,6 +34,9 @@
                 return -1;                                                          \
             }                                                                       \
         }                                                                           \
+        else {                                                                      \
+            x = (intw##_t)parsed;                                                   \
+        }                                                                           \
         memcpy(dataptr, &x, sizeof(x));                                             \
         if (!PyArray_ISNBO(descr->byteorder)) {                                     \
             descr->f->copyswap(dataptr, dataptr, 1, NULL);                          \
@@ -48,11 +50,10 @@
             const Py_UCS4 *str, const Py_UCS4 *end, char *dataptr,                  \
             parser_config *pconfig)                                                 \
     {                                                                               \
+        uint64_t parsed;                                                            \
         uintw##_t x;                                                                \
-        int ierror = 0;                                                             \
                                                                                     \
-        x = (uintw##_t) str_to_uint64(str, UINT_MAX, &ierror);                      \
-        if (ierror) {                                                               \
+        if (str_to_uint64(str, end, UINT_MAX, &parsed) < 0) {                       \
             if (pconfig->allow_float_for_int) {                                     \
                 double fx;                                                          \
                 Py_UCS4 decimal = pconfig->decimal;                                 \
@@ -67,6 +68,9 @@
             else {                                                                  \
                 return -1;                                                          \
             }                                                                       \
+        }                                                                           \
+        else {                                                                      \
+            x = (uintw##_t)parsed;                                                  \
         }                                                                           \
         memcpy(dataptr, &x, sizeof(x));                                             \
         if (!PyArray_ISNBO(descr->byteorder)) {                                     \
