@@ -52,32 +52,6 @@ compute_row_size(
 
 
 /*
- *  Find the length of the longest token.
- */
-
-static size_t
-max_token_len(
-        field_info *fields, int num_tokens, int32_t *usecols)
-{
-    size_t maxlen = 0;
-    for (int i = 0; i < num_tokens; ++i) {
-        size_t j;
-        if (usecols == NULL) {
-            j = i;
-        }
-        else {
-            j = usecols[i];
-        }
-        size_t m = fields[j+1].offset - fields[j].offset - 1;
-        if (m > maxlen) {
-            maxlen = m;
-        }
-    }
-    return maxlen;
-}
-
-
-/*
  *  Create the array of converter functions from the Python converters.
  */
 PyObject **
