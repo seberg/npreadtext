@@ -8,11 +8,13 @@
 
 #include "stream.h"
 
+#include "numpy/ndarraytypes.h"
+
 #include "tokenize.h"
 #include "error_types.h"
 #include "parser_config.h"
+#include "growth.h"
 
-#include "numpy/ndarraytypes.h"
 
 /*
     How parsing quoted fields works:
@@ -43,11 +45,6 @@
 */
 
 
-static size_t
-next_size(size_t size) {
-    return ((size_t)size + 3) & ~(size_t)3;
-}
-
 /**begin repeat
  * #type = Py_UCS1, Py_UCS2, Py_UCS4#
  */
@@ -59,8 +56,13 @@ copy_to_field_buffer_@type@(tokenizer_state *ts,
     size_t size = chunk_length + ts->field_buffer_pos + 2;
 
     if (NPY_UNLIKELY(ts->field_buffer_length < size)) {
-        size = next_size(size);
-        Py_UCS4 *grown = PyMem_Realloc(ts->field_buffer, size * sizeof(Py_UCS4));
+        npy_intp alloc_size = grow_size_and_multiply(&size, 32, sizeof(Py_UCS4));
+        if (alloc_size < 0) {
+            PyErr_Format(PyExc_ValueError,
+                    "line too long to handle while reading file.");
+            return -1;
+        }
+        Py_UCS4 *grown = PyMem_Realloc(ts->field_buffer, alloc_size);
         if (grown == NULL) {
             PyErr_NoMemory();
             return -1;
@@ -86,10 +88,18 @@ add_field(tokenizer_state *ts)
     /* The previous field is done, advance to keep a NUL byte at the end */
     ts->field_buffer_pos += 1;
 
-    size_t size = ts->num_fields + 1;
-    if (NPY_UNLIKELY(size > ts->fields_size)) {
-        size = next_size(size);
-        field_info *fields = PyMem_Realloc(ts->fields, size * sizeof(*fields));
+    if (NPY_UNLIKELY((size_t)ts->num_fields + 1 > ts->fields_size)) {
+        size_t size = (size_t)ts->num_fields;
+
+        npy_intp alloc_size = grow_size_and_multiply(
+                &size, 4, sizeof(field_info));
+        if (alloc_size < 0) {
+            /* Check for a size overflow, path should be almost impossible. */
+            PyErr_Format(PyExc_ValueError,
+                    "too many columns found; cannot read file.");
+            return -1;
+        }
+        field_info *fields = PyMem_Realloc(ts->fields, alloc_size);
         if (fields == NULL) {
             PyErr_NoMemory();
             return -1;
@@ -429,11 +439,11 @@ tokenizer_init(tokenizer_state *ts, parser_config *config)
     }
     ts->field_buffer_length = 32;
 
-    ts->fields = PyMem_Malloc(5 * sizeof(*ts->fields));
+    ts->fields = PyMem_Malloc(4 * sizeof(*ts->fields));
     if (ts->fields == NULL) {
         PyErr_NoMemory();
         return -1;
     }
-    ts->fields_size = 5;
+    ts->fields_size = 4;
     return 0;
 }

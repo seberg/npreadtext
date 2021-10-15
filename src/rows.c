@@ -22,6 +22,7 @@
 #include "rows.h"
 #include "str_to.h"
 #include "str_to_int.h"
+#include "growth.h"
 
 /*
  * Minimum size to grow the allcoation by (or 25%). The 8KiB means the actual
@@ -195,7 +196,7 @@ read_rows(stream *s,
     /* Make sure we own `data_array` for the purpose of error handling */
     Py_XINCREF(data_array);
     size_t rows_per_block = 1;  /* will be increased depending on row size */
-    size_t data_allocated_rows = 0;
+    Py_ssize_t data_allocated_rows = 0;
 
     int ts_result = 0;
     tokenizer_state ts;
@@ -224,7 +225,7 @@ read_rows(stream *s,
         }
     }
 
-    size_t row_count = 0;  /* number of rows actually processed */
+    Py_ssize_t row_count = 0;  /* number of rows actually processed */
     while ((*nrows < 0 || row_count < *nrows) && ts_result == 0) {
         ts_result = tokenize(s, &ts, pconfig);
         if (ts_result < 0) {
@@ -316,13 +317,19 @@ read_rows(stream *s,
              * Grow by ~25% and rounded up to the next rows_per_block
              * NOTE: This is based on very crude timings and could be refined!
              */
-            size_t growth = (data_allocated_rows >> 2) + rows_per_block;
-            growth &= ~(size_t)(rows_per_block-1);
-            size_t new_rows = data_allocated_rows + growth;
+            size_t new_rows = data_allocated_rows;
+            npy_intp alloc_size = grow_size_and_multiply(
+                    &new_rows, rows_per_block, row_size);
+            if (alloc_size < 0) {
+                /* should normally error much earlier, but make sure */
+                PyErr_SetString(PyExc_ValueError,
+                        "array is too big. Cannot read file as a single array; "
+                        "providing a maximum number of rows to read may help.");
+                goto error;
+            }
 
-            size_t size = new_rows * row_size;
             char *new_data = PyDataMem_RENEW(
-                    PyArray_BYTES(data_array), size ? size : 1);
+                    PyArray_BYTES(data_array), alloc_size ? alloc_size : 1);
             if (new_data == NULL) {
                 PyErr_NoMemory();
                 goto error;
@@ -333,7 +340,7 @@ read_rows(stream *s,
             data_ptr = new_data + row_count * row_size;
             data_allocated_rows = new_rows;
             if (needs_init) {
-                memset(data_ptr, '\0', growth * row_size);
+                memset(data_ptr, '\0', (new_rows - row_count) * row_size);
             }
         }
 
