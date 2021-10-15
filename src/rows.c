@@ -23,8 +23,11 @@
 #include "str_to.h"
 #include "str_to_int.h"
 
-/* Minimum number of rows to grow, must be a power of two */
-#define ROWS_PER_BLOCK 512
+/*
+ * Minimum size to grow the allcoation by (or 25%). The 8KiB means the actual
+ * growths is within `8 KiB <= size < 16 KiB` (depending on the row size).
+ */
+#define MIN_BLOCK_SIZE (1 << 13)
 
 
 //
@@ -191,6 +194,7 @@ read_rows(stream *s,
     bool data_array_allocated = data_array == NULL;
     /* Make sure we own `data_array` for the purpose of error handling */
     Py_XINCREF(data_array);
+    size_t rows_per_block = 1;  /* will be increased depending on row size */
     size_t data_allocated_rows = 0;
 
     int ts_result = 0;
@@ -256,9 +260,23 @@ read_rows(stream *s,
                 if (*nrows < 0) {
                     /*
                      * Negative *nrows denotes to read the whole file, we
-                     * approach this by allocating ever larger blocks here:
+                     * approach this by allocating ever larger blocks.
+                     * Adds a number of rows based on `MIN_BLOCK_SIZE`.
+                     * Note: later code grows assuming this is a power of two.
                      */
-                    data_allocated_rows = ROWS_PER_BLOCK;
+                    if (row_size == 0) {
+                        /* actual rows_per_block should not matter here */
+                        rows_per_block = 512;
+                    }
+                    else {
+                        /* safe on overflow since min_rows will be 0 or 1 */
+                        size_t min_rows = (
+                                (MIN_BLOCK_SIZE + row_size - 1) / row_size);
+                        while (rows_per_block < min_rows) {
+                            rows_per_block *= 2;
+                        }
+                    }
+                    data_allocated_rows = rows_per_block;
                 }
                 else {
                     data_allocated_rows = *nrows;
@@ -295,11 +313,11 @@ read_rows(stream *s,
 
         if (NPY_UNLIKELY(data_allocated_rows == row_count)) {
             /*
-             * Grow by ~25% and rounded up to the next ROWS_PER_BLOCK
+             * Grow by ~25% and rounded up to the next rows_per_block
              * NOTE: This is based on very crude timings and could be refined!
              */
-            size_t growth = (data_allocated_rows >> 2) + ROWS_PER_BLOCK;
-            growth &= ~(size_t)(ROWS_PER_BLOCK-1);
+            size_t growth = (data_allocated_rows >> 2) + rows_per_block;
+            growth &= ~(size_t)(rows_per_block-1);
             size_t new_rows = data_allocated_rows + growth;
 
             size_t size = new_rows * row_size;
