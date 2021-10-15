@@ -168,7 +168,7 @@ stream_python_file(PyObject *obj, char *encoding)
     }
 
     strm->stream_data = (void *)fb;
-    strm->stream_nextbuf = &fb_nextbuf;
+    strm->stream_nextbuf = (void *)&fb_nextbuf;
     strm->stream_close = &fb_del;
 
     return strm;
@@ -265,7 +265,7 @@ stream_python_iterable(PyObject *obj, char *encoding)
     it->iterator = obj;
 
     strm->stream_data = (void *)it;
-    strm->stream_nextbuf = &it_nextbuf;
+    strm->stream_nextbuf = (void *)&it_nextbuf;
     strm->stream_close = &it_del;
 
     return strm;

@@ -34,7 +34,7 @@ def configuration(parent_package='', top_path=None):
     # config.add_data_dir('tests')
     config.add_subpackage('npreadtext')
     cfiles = ['_readtextmodule.c',
-              'rows.c', 'tokenize.c.src',
+              'growth.c', 'rows.c', 'tokenize.c.src',
               'conversions.c', 'str_to_int.c',
               'pow10table.c',
               'stream_pyobject.c',
